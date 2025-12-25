@@ -28,12 +28,18 @@ pub fn main() !void {
     // try block.insertValue(.{ .int32 = 1337 });
     // try block.insertValue(.{ .varchar = "Zig is powerful" });
 
-    const val1 = try block.getValue(2);
-    switch (val1) {
-        .int32 => |i| std.debug.print("Fick int: {d}\n", .{i}),
-        .varchar => |s| std.debug.print("Fick str: {s}\n", .{s}),
-        .boolean => |b| std.debug.print("Fick bool: {any}\n", .{b}),
+    // const val1 = try block.getValue(1);
+
+    var it = block.iterator();
+    while (it.next()) |val| {
+        switch (val) {
+            .int32 => |i| std.debug.print("Iter int: {d}\n", .{i}),
+            .varchar => |s| std.debug.print("Iter str: {s}\n", .{s}),
+            .boolean => |b| std.debug.print("Iter bool: {any}\n", .{b}),
+        }
     }
+
+    // try block.deleteValue(1);
 
     // try pager.flushBlock(0);
 }

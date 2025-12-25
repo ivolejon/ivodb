@@ -1,7 +1,9 @@
 const std = @import("std");
-const constants = @import("constants.zig");
-const ValueType = @import("types.zig").ValueType;
-const TypeTag = @import("types.zig").TypeTag;
+const constants = @import("../common/constants.zig");
+const types = @import("../common/types.zig");
+const ValueType = types.ValueType;
+const TypeTag = types.TypeTag;
+const CellIterator = @import("cell_iter.zig").Iterator;
 
 pub const Block = struct {
     id: u64,
@@ -23,6 +25,12 @@ pub const Block = struct {
         self.setFreeEnd(constants.BLOCK_SIZE); // Börja vid 4096
         self.setFreeStart(HEADER_SIZE); // Börja skriva slots efter headern
         self.isDirty = true;
+    }
+
+    pub fn iterator(self: *Block) CellIterator {
+        return CellIterator{
+            .block = self,
+        };
     }
 
     pub fn getCellCount(self: *Block) u16 {
@@ -52,6 +60,17 @@ pub const Block = struct {
 
     pub fn isValid(self: *Block) bool {
         return self.data[OFFSET_MAGIC] == MAGIC_NUMBER;
+    }
+
+    fn getCellSize(self: *const Block, offset: u16) !u16 {
+        const tag_byte = self.data[offset];
+        const tag = std.meta.intToEnum(TypeTag, tag_byte) catch return error.UnknownTypeTag;
+
+        return switch (tag) {
+            .int32 => 1 + 4,
+            .varchar => 1 + 1 + @as(u16, self.data[offset + 1]),
+            .boolean => 1 + 1,
+        };
     }
 
     pub fn insertValue(self: *Block, value: ValueType) !void {
@@ -122,25 +141,45 @@ pub const Block = struct {
             },
         };
     }
+    pub fn deleteValue(self: *Block, index: u16) !void {
+        const count = self.getCellCount();
+        if (index >= count) return error.IndexOutOfBounds;
 
-    // pub fn getVarchar(self: *Block, index: u16) ![]const u8 {
-    //     const count = self.getCellCount();
-    //     if (index >= count) return error.IndexOutOfBounds;
+        // 1. Hitta den rad vi ska ta bort
+        const slot_pos = HEADER_SIZE + (index * 2);
+        const offset_to_delete = std.mem.readInt(u16, self.data[slot_pos..][0..2], .little);
 
-    //     // 1. Beräkna var slot-pekaren för detta index finns
-    //     // Slots börjar efter headern (byte 12) och är 2 bytes var
-    //     const slot_pos = HEADER_SIZE + (index * 2);
+        // Vi behöver veta storleken på det vi tar bort för att kunna flytta resten
+        // Här använder vi en hjälpmetod (se nedan)
+        const size_to_delete = try self.getCellSize(offset_to_delete);
 
-    //     // 2. Läs offseten (var raden faktiskt börjar i data-arrayen)
-    //     const record_offset = std.mem.readInt(u16, self.data[slot_pos..][0..2], .little);
+        // 2. Flytta all data som ligger "under" (lägre offset) den raderade raden
+        // I ett slotted page-block ligger nyare rader på lägre offsets.
+        // Vi flyttar data från FreeEnd fram till offset_to_delete.
+        const current_free_end = self.getFreeEnd();
+        const bytes_to_move = offset_to_delete - current_free_end;
 
-    //     // 3. Läs längden på varcharen (första byten vid den offseten)
-    //     const text_len = self.data[record_offset];
+        if (bytes_to_move > 0) {
+            // Flytta datan "nedåt" (mot högre adresser) för att täppa till hålet
+            std.mem.copyBackwards(u8, self.data[current_free_end + size_to_delete .. offset_to_delete + size_to_delete], self.data[current_free_end..offset_to_delete]);
+        }
 
-    //     // 4. Returnera en slice till texten (hoppa över längd-byten)
-    //     const start = record_offset + 1;
-    //     const end = start + text_len;
+        // 3. Uppdatera alla ANDRA slots som påverkades av flytten
+        // Alla rader som hade en offset lägre än den vi tog bort har nu flyttats framåt.
+        var i: u16 = 0;
+        while (i < count) : (i += 1) {
+            const s_pos = HEADER_SIZE + (i * 2);
+            const s_offset = std.mem.readInt(u16, self.data[s_pos..][0..2], .little);
+            if (s_offset != 0 and s_offset < offset_to_delete) {
+                std.mem.writeInt(u16, self.data[s_pos..][0..2], s_offset + size_to_delete, .little);
+            }
+        }
 
-    //     return self.data[start..end];
-    // }
+        // 4. Markera den borttagna sloten som tom (0)
+        std.mem.writeInt(u16, self.data[slot_pos..][0..2], 0, .little);
+
+        // 5. Uppdatera FreeEnd
+        self.setFreeEnd(current_free_end + size_to_delete);
+        self.isDirty = true;
+    }
 };
