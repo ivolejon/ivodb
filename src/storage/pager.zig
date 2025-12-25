@@ -1,5 +1,5 @@
 const std = @import("std");
-const Block = @import("../common/types.zig").Block;
+const Block = @import("../common/block.zig").Block;
 const HashMap = std.AutoHashMap;
 const Allocator = std.mem.Allocator;
 const constants = @import("../common/constants.zig");
