@@ -1,19 +1,34 @@
 const std = @import("std");
-const Block = @import("block.zig").Block;
-const DiskManager = @import("disk.zig").DiskManager;
 const HashMap = std.AutoHashMap;
 const Allocator = std.mem.Allocator;
-const constants = @import("../common/constants.zig");
 const print = std.debug.print;
+
+const common = @import("../common/mod.zig");
+const constants = common.constants;
+const Block = @import("block.zig").Block;
+const DiskManager = @import("disk.zig").DiskManager;
+
+const LruList = std.DoublyLinkedList;
+const LruNode = struct {
+    page_id: u64,
+    node: LruList.Node,
+};
 
 pub const Pager = struct {
     disk_manager: DiskManager,
     blocks: HashMap(u64, Block),
+    lru_list: LruList,
+    // För att snabbt hitta noden i listan givet ett page_id
+    lru_map: std.AutoHashMap(u64, *LruNode),
+    allocator: std.mem.Allocator,
 
     pub fn init(_alloc: Allocator, storage_path: []const u8) !Pager {
         return Pager{
             .disk_manager = try DiskManager.init(storage_path),
             .blocks = HashMap(u64, Block).init(_alloc),
+            .lru_list = LruList{},
+            .lru_map = std.AutoHashMap(u64, *LruNode).init(_alloc),
+            .allocator = _alloc,
         };
     }
 
@@ -22,10 +37,49 @@ pub const Pager = struct {
         self.disk_manager.deinit();
     }
 
+    fn markRecentlyUsed(self: *Pager, page_id: u64) !void {
+        if (self.lru_map.get(page_id)) |item| {
+            // Om blocket redan finns i listan, flytta det till toppen
+            self.lru_list.remove(&item.node);
+            self.lru_list.prepend(&item.node);
+        } else {
+            // Om det är ett nytt block i cachen, skapa en ny nod
+            const item = try self.allocator.create(LruNode);
+            item.page_id = page_id;
+            self.lru_list.prepend(&item.node);
+            try self.lru_map.put(page_id, item);
+        }
+    }
+
+    fn evictIfFull(self: *Pager) !void {
+        if (self.blocks.count() <= constants.MAX_PAGES) return;
+
+        // Hämta det sista elementet (Least Recently Used)
+        const last_node_ptr = self.lru_list.last orelse return;
+        const item: *LruNode = @fieldParentPtr("node", last_node_ptr);
+        const page_id_to_evict = item.page_id;
+
+        // 1. Om blocket är ändrat, spara det till disk!
+        try self.flushBlock(page_id_to_evict);
+
+        // 2. Ta bort från alla strukturer
+        _ = self.blocks.remove(page_id_to_evict);
+        _ = self.lru_map.remove(page_id_to_evict);
+        self.lru_list.remove(last_node_ptr);
+
+        // 3. Frigör nodens minne
+        self.allocator.destroy(last_node_ptr);
+
+        std.debug.print("LRU: Evicted block {d} to free memory\n", .{page_id_to_evict});
+    }
+
     pub fn getBlock(self: *Pager, page_id: u64) !*Block {
         if (self.blocks.getPtr(page_id)) |cached_block| {
+            try self.markRecentlyUsed(page_id);
             return cached_block;
         }
+
+        try self.evictIfFull();
 
         var buffer = [_]u8{0} ** constants.BLOCK_SIZE;
         const bytes_read = try self.disk_manager.readPage(page_id, &buffer);
@@ -42,6 +96,7 @@ pub const Pager = struct {
         if (bytes_read == 0 or block.getFreeEnd() == 0) {
             block.initEmpty();
         }
+        try self.markRecentlyUsed(page_id);
 
         return block;
     }
