@@ -4,7 +4,7 @@ const ValueType = types.ValueType;
 const TypeTag = types.TypeTag;
 
 pub const Iterator = struct {
-    block: *Block,
+    block: *const Block,
     current_index: u16 = 0,
 
     pub fn next(self: *Iterator) ?ValueType {

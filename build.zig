@@ -153,4 +153,14 @@ pub fn build(b: *std.Build) void {
     //
     // Lastly, the Zig build system is relatively simple and self-contained,
     // and reading its source code will allow you to master it.
+
+    // const unit_tests = b.addTest(.{
+    //     .root_source_file = b.path("src/main.zig"), // Eller root.zig
+    //     .target = target,
+    //     .optimize = optimize,
+    // });
+
+    // const run_unit_tests = b.addRunArtifact(unit_tests);
+    // const test_step = b.step("test", "Run unit tests");
+    // test_step.dependOn(&run_unit_tests.step);
 }

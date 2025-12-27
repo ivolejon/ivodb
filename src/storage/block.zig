@@ -1,6 +1,7 @@
 const std = @import("std");
-const constants = @import("../common/constants.zig");
-const types = @import("../common/types.zig");
+const common = @import("../common/mod.zig");
+const constants = common.constants;
+const types = common.types;
 const ValueType = types.ValueType;
 const TypeTag = types.TypeTag;
 const CellIterator = @import("cell_iter.zig").Iterator;
@@ -27,13 +28,13 @@ pub const Block = struct {
         self.isDirty = true;
     }
 
-    pub fn iterator(self: *Block) CellIterator {
+    pub fn iterator(self: *const Block) CellIterator {
         return CellIterator{
             .block = self,
         };
     }
 
-    pub fn getCellCount(self: *Block) u16 {
+    pub fn getCellCount(self: *const Block) u16 {
         return std.mem.readInt(u16, self.data[OFFSET_CELL_COUNT..][0..2], .little);
     }
 
@@ -107,7 +108,7 @@ pub const Block = struct {
             },
         }
 
-        // Uppdatera slots och header (precis som förut)
+        // Uppdatera slots och header
         const slot_pos = current_free_start;
         std.mem.writeInt(u16, self.data[slot_pos..][0..2], new_free_end, .little);
 
@@ -117,7 +118,7 @@ pub const Block = struct {
         self.isDirty = true;
     }
 
-    pub fn getValue(self: *Block, index: u16) !ValueType {
+    pub fn getValue(self: *const Block, index: u16) !ValueType {
         if (index >= self.getCellCount()) return error.IndexOutOfBounds;
 
         const slot_pos = HEADER_SIZE + (index * 2);
@@ -145,7 +146,7 @@ pub const Block = struct {
         const count = self.getCellCount();
         if (index >= count) return error.IndexOutOfBounds;
 
-        // 1. Hitta den rad vi ska ta bort
+        // Hitta den rad vi ska ta bort
         const slot_pos = HEADER_SIZE + (index * 2);
         const offset_to_delete = std.mem.readInt(u16, self.data[slot_pos..][0..2], .little);
 
@@ -153,7 +154,7 @@ pub const Block = struct {
         // Här använder vi en hjälpmetod (se nedan)
         const size_to_delete = try self.getCellSize(offset_to_delete);
 
-        // 2. Flytta all data som ligger "under" (lägre offset) den raderade raden
+        // Flytta all data som ligger "under" (lägre offset) den raderade raden
         // I ett slotted page-block ligger nyare rader på lägre offsets.
         // Vi flyttar data från FreeEnd fram till offset_to_delete.
         const current_free_end = self.getFreeEnd();
@@ -164,7 +165,7 @@ pub const Block = struct {
             std.mem.copyBackwards(u8, self.data[current_free_end + size_to_delete .. offset_to_delete + size_to_delete], self.data[current_free_end..offset_to_delete]);
         }
 
-        // 3. Uppdatera alla ANDRA slots som påverkades av flytten
+        // Uppdatera alla ANDRA slots som påverkades av flytten
         // Alla rader som hade en offset lägre än den vi tog bort har nu flyttats framåt.
         var i: u16 = 0;
         while (i < count) : (i += 1) {
