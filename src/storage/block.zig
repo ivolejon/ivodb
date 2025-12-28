@@ -68,7 +68,7 @@ pub const Block = struct {
         const tag = std.meta.intToEnum(TypeTag, tag_byte) catch return error.UnknownTypeTag;
 
         return switch (tag) {
-            .int32 => 1 + 4,
+            .int => 1 + 4,
             .varchar => 1 + 1 + @as(u16, self.data[offset + 1]),
             .boolean => 1 + 1,
         };
@@ -80,7 +80,7 @@ pub const Block = struct {
 
         // Beräkna storlek baserat på aktivt fält i unionen
         const payload_size: u16 = switch (value) {
-            .int32 => 1 + 4, // Tag + i32
+            .int => 1 + 4, // Tag + i32
             .varchar => |text| @as(u16, @intCast(text.len)) + 2, // Tag + Längd-byte + Text
             .boolean => 1 + 1, // Tag + 1 byte
         };
@@ -96,7 +96,7 @@ pub const Block = struct {
 
         // Skriv data baserat på typ
         switch (value) {
-            .int32 => |val| {
+            .int => |val| {
                 std.mem.writeInt(i32, self.data[new_free_end + 1 ..][0..4], val, .little);
             },
             .varchar => |text| {
@@ -128,9 +128,9 @@ pub const Block = struct {
         const tag = std.meta.intToEnum(TypeTag, raw_tag) catch return error.UnknownTypeTag;
 
         return switch (tag) {
-            .int32 => {
+            .int => {
                 const val = std.mem.readInt(i32, self.data[offset + 1 ..][0..4], .little);
-                return ValueType{ .int32 = val };
+                return ValueType{ .int = val };
             },
             .varchar => {
                 const len = self.data[offset + 1];
@@ -182,5 +182,31 @@ pub const Block = struct {
         // 5. Uppdatera FreeEnd
         self.setFreeEnd(current_free_end + size_to_delete);
         self.isDirty = true;
+    }
+
+    pub fn hasSpaceFor(self: *const Block, value: ValueType) bool {
+        // 1. Beräkna hur mycket plats datan tar
+        const data_size = self.getValueSize(value);
+
+        // 2. Beräkna totalt behov:
+        // + data_size (själva värdet)
+        // + 1 byte (för TypeTag/Header i cellen)
+        // + 2 bytes (för den nya slot-pekaren i början av blocket)
+        const total_needed = data_size + 1 + 2;
+
+        // 3. Kolla tillgängligt utrymme mellan slots och data
+        const current_free_space = self.getFreeEnd() - self.getFreeStart();
+
+        return current_free_space >= total_needed;
+    }
+
+    // Hjälpfunktion för att veta storleken på olika typer
+    fn getValueSize(self: *const Block, value: ValueType) u16 {
+        _ = self;
+        return switch (value) {
+            .int => 8, // i64
+            .boolean => 1, // bool
+            .varchar => |s| @as(u16, @intCast(s.len)),
+        };
     }
 };

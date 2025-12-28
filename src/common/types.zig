@@ -2,13 +2,13 @@ const std = @import("std");
 const constants = @import("constants.zig");
 
 pub const TypeTag = enum(u8) {
-    int32 = 1,
+    int = 1,
     varchar = 2,
     boolean = 3,
 };
 
 pub const ValueType = union(TypeTag) {
-    int32: i32,
+    int: i32,
     varchar: []const u8,
     boolean: bool,
 };

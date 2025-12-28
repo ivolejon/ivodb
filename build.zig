@@ -166,15 +166,13 @@ pub fn build(b: *std.Build) void {
     //
     //
     const common_module = b.addModule("common", .{
-        .root_source_file = .{ .path = "src/common/mod.zig" },
+        .root_source_file = b.path("src/common/mod.zig"),
+        .target = target,
     });
 
     const unit_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/storage/pager.zig" },
-        .target = target,
-        .optimize = optimize,
+        .root_module = common_module,
     });
 
-    // This tells pager.zig that it can use @import("common")
     unit_tests.root_module.addImport("common", common_module);
 }
