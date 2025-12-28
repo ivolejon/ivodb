@@ -2,13 +2,14 @@ const std = @import("std");
 const HashMap = std.AutoHashMap;
 const Allocator = std.mem.Allocator;
 const print = std.debug.print;
+const LruList = std.DoublyLinkedList;
 
 const common = @import("../common/mod.zig");
 const constants = common.constants;
+const ValueType = common.types.ValueType;
 const Block = @import("block.zig").Block;
 const DiskManager = @import("disk.zig").DiskManager;
 
-const LruList = std.DoublyLinkedList;
 const LruNode = struct {
     page_id: u64,
     node: LruList.Node,
@@ -35,6 +36,7 @@ pub const Pager = struct {
     pub fn deinit(self: *Pager) void {
         self.blocks.deinit();
         self.disk_manager.deinit();
+        self.lru_map.deinit();
     }
 
     fn markRecentlyUsed(self: *Pager, page_id: u64) !void {
@@ -119,3 +121,25 @@ pub const Pager = struct {
         }
     }
 };
+
+test "Pager can load and flush blocks" {
+    const allocator = std.heap.page_allocator;
+    {
+        var file = try std.fs.cwd().createFile("test_data.ivodb", .{ .truncate = true });
+        defer file.close();
+    }
+    var pager = try Pager.init(allocator, "test_data.ivodb");
+    defer pager.deinit();
+
+    const page_id: u64 = 0;
+
+    var block = try pager.getBlock(page_id);
+    block.initEmpty();
+    try block.insertValue(.{ .varchar = "Test string" });
+    try pager.flushBlock(page_id);
+
+    const loaded_block = try pager.getBlock(page_id);
+    const value = try loaded_block.getValue(0);
+    try std.testing.expectEqual(block, loaded_block);
+    try std.testing.expectEqualStrings("Test string", value.varchar);
+}

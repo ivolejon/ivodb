@@ -43,3 +43,8 @@ pub fn main() !void {
 
     // try pager.flushBlock(0);
 }
+
+test {
+    // This ensures nested tests are discovered
+    _ = storage;
+}

@@ -1,7 +1,7 @@
 const Block = @import("block.zig").Block;
-const types = @import("../common/types.zig");
-const ValueType = types.ValueType;
-const TypeTag = types.TypeTag;
+const common = @import("../common/mod.zig");
+const ValueType = common.types.ValueType;
+const TypeTag = common.types.TypeTag;
 
 pub const Iterator = struct {
     block: *const Block,
