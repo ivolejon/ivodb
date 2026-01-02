@@ -42,6 +42,21 @@ pub const Table = struct {
         }
         block.isDirty = true;
     }
+
+    /// Returns a specific block belonging to this table by its relative index.
+    pub fn getBlock(self: *Table, relative_page_id: u64) !*Block {
+        if (relative_page_id >= self.total_pages) return error.PageNotFound;
+        return try self.pager.getBlock(self.first_page_id + relative_page_id);
+    }
+
+    /// Helper to insert a single KV pair using the document logic.
+    pub fn insertKeyValuePair(self: *Table, key: []const u8, value: []const u8) !void {
+        const fields = [_]Field{
+            .{ .name = "k", .value = .{ .text = key } },
+            .{ .name = "v", .value = .{ .text = value } },
+        };
+        try self.insertDocument(&fields);
+    }
 };
 
 test "Table: insert and retrieve document" {
