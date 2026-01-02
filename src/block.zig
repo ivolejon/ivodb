@@ -7,7 +7,6 @@ const TypeTag = types.TypeTag;
 const CellIterator = @import("cell_iter.zig").CellIterator;
 
 /// Represents a fixed-size data block using a slotted page architecture.
-/// Slots grow from the top (after header), and data grows from the bottom.
 pub const Block = struct {
     id: u64,
     isDirty: bool,
@@ -21,7 +20,6 @@ pub const Block = struct {
     const MAGIC_NUMBER: u8 = 0x42;
     const OFFSET_MAGIC: usize = 7;
 
-    /// Formats the block as an empty slotted page with a valid magic number.
     pub fn initEmpty(self: *Block) void {
         @memset(&self.data, 0);
         self.data[OFFSET_MAGIC] = MAGIC_NUMBER;
@@ -31,14 +29,10 @@ pub const Block = struct {
         self.isDirty = true;
     }
 
-    /// Returns an iterator to traverse all cells stored within this block.
     pub fn iterator(self: *const Block) CellIterator {
-        return CellIterator{
-            .block = self,
-        };
+        return CellIterator{ .block = self };
     }
 
-    /// Retrieves the number of occupied slots in the block.
     pub fn getCellCount(self: *const Block) u16 {
         return std.mem.readInt(u16, self.data[OFFSET_CELL_COUNT..][0..2], .little);
     }
@@ -47,25 +41,22 @@ pub const Block = struct {
         std.mem.writeInt(u16, self.data[OFFSET_CELL_COUNT..][0..2], count, .little);
     }
 
-    /// Returns the offset where the free space ends and data starts.
     pub fn getFreeEnd(self: *const Block) u16 {
-        return std.mem.readInt(u16, self.data[OFFSET_FREE_END .. OFFSET_FREE_END + 2], .little);
+        return std.mem.readInt(u16, self.data[OFFSET_FREE_END .. OFFSET_FREE_END + 2][0..2], .little);
     }
 
     fn setFreeEnd(self: *Block, value: u16) void {
-        std.mem.writeInt(u16, self.data[OFFSET_FREE_END .. OFFSET_FREE_END + 2], value, .little);
+        std.mem.writeInt(u16, self.data[OFFSET_FREE_END .. OFFSET_FREE_END + 2][0..2], value, .little);
     }
 
-    /// Returns the offset where free space begins (end of slot array).
     pub fn getFreeStart(self: *const Block) u16 {
-        return std.mem.readInt(u16, self.data[OFFSET_FREE_START .. OFFSET_FREE_START + 2], .little);
+        return std.mem.readInt(u16, self.data[OFFSET_FREE_START .. OFFSET_FREE_START + 2][0..2], .little);
     }
 
     fn setFreeStart(self: *Block, value: u16) void {
-        std.mem.writeInt(u16, self.data[OFFSET_FREE_START .. OFFSET_FREE_START + 2], value, .little);
+        std.mem.writeInt(u16, self.data[OFFSET_FREE_START .. OFFSET_FREE_START + 2][0..2], value, .little);
     }
 
-    /// Checks if the block contains the correct magic number.
     pub fn isValid(self: *Block) bool {
         return self.data[OFFSET_MAGIC] == MAGIC_NUMBER;
     }
@@ -76,19 +67,18 @@ pub const Block = struct {
 
         return switch (tag) {
             .number => 1 + 4,
-            .text => 1 + 1 + @as(u16, self.data[offset + 1]),
+            .text => 1 + 2 + std.mem.readInt(u16, self.data[offset + 1 .. offset + 3][0..2], .little),
             .boolean => 1 + 1,
         };
     }
 
-    /// Inserts a value into the block, updating the slot array and free space pointers.
     pub fn insertValue(self: *Block, value: ValueType) !void {
         const current_free_start = self.getFreeStart();
         const current_free_end = self.getFreeEnd();
 
         const payload_size: u16 = switch (value) {
             .number => 1 + 4,
-            .text => |text| @as(u16, @intCast(text.len)) + 2,
+            .text => |text| @as(u16, @intCast(text.len)) + 3, // 1 tag + 2 len + data
             .boolean => 1 + 1,
         };
 
@@ -97,7 +87,6 @@ pub const Block = struct {
         }
 
         const new_free_end = current_free_end - payload_size;
-
         self.data[new_free_end] = @intFromEnum(std.meta.activeTag(value));
 
         switch (value) {
@@ -105,8 +94,8 @@ pub const Block = struct {
                 std.mem.writeInt(i32, self.data[new_free_end + 1 ..][0..4], val, .little);
             },
             .text => |text| {
-                self.data[new_free_end + 1] = @intCast(text.len);
-                @memcpy(self.data[new_free_end + 2 ..][0..text.len], text);
+                std.mem.writeInt(u16, self.data[new_free_end + 1 ..][0..2], @as(u16, @intCast(text.len)), .little);
+                @memcpy(self.data[new_free_end + 3 ..][0..text.len], text);
             },
             .boolean => |b| {
                 self.data[new_free_end + 1] = if (b) @as(u8, 1) else 0;
@@ -122,12 +111,12 @@ pub const Block = struct {
         self.isDirty = true;
     }
 
-    /// Retrieves a value by its index in the slot array.
     pub fn getValue(self: *const Block, index: u16) !ValueType {
         if (index >= self.getCellCount()) return error.IndexOutOfBounds;
 
         const slot_pos = HEADER_SIZE + (index * 2);
         const offset = std.mem.readInt(u16, self.data[slot_pos..][0..2], .little);
+        if (offset == 0) return error.UnknownTypeTag;
 
         const raw_tag = self.data[offset];
         const tag = std.meta.intToEnum(TypeTag, raw_tag) catch return error.UnknownTypeTag;
@@ -138,8 +127,8 @@ pub const Block = struct {
                 return ValueType{ .number = val };
             },
             .text => {
-                const len = self.data[offset + 1];
-                const text = self.data[offset + 2 .. offset + 2 + len];
+                const len = std.mem.readInt(u16, self.data[offset + 1 .. offset + 3][0..2], .little);
+                const text = self.data[offset + 3 .. offset + 3 + len];
                 return ValueType{ .text = text };
             },
             .boolean => {
@@ -148,20 +137,18 @@ pub const Block = struct {
         };
     }
 
-    /// Removes a value and compacts the data to reclaim space.
     pub fn deleteValue(self: *Block, index: u16) !void {
         const count = self.getCellCount();
         if (index >= count) return error.IndexOutOfBounds;
 
         const slot_pos = HEADER_SIZE + (index * 2);
         const offset_to_delete = std.mem.readInt(u16, self.data[slot_pos..][0..2], .little);
+        if (offset_to_delete == 0) return;
 
         const size_to_delete = try self.getCellSize(offset_to_delete);
-
         const current_free_end = self.getFreeEnd();
-        const bytes_to_move = offset_to_delete - current_free_end;
 
-        if (bytes_to_move > 0) {
+        if (offset_to_delete > current_free_end) {
             std.mem.copyBackwards(u8, self.data[current_free_end + size_to_delete .. offset_to_delete + size_to_delete], self.data[current_free_end..offset_to_delete]);
         }
 
@@ -175,15 +162,14 @@ pub const Block = struct {
         }
 
         std.mem.writeInt(u16, self.data[slot_pos..][0..2], 0, .little);
-
         self.setFreeEnd(current_free_end + size_to_delete);
         self.isDirty = true;
     }
 
-    /// Checks if the block has sufficient space to store the given value.
     pub fn hasSpaceFor(self: *const Block, value: ValueType) bool {
         const data_size = self.getValueSize(value);
-        const total_needed = data_size + 1 + 2;
+        // Vi behöver: data_size + 2 bytes för slotten
+        const total_needed = data_size + 2;
         const current_free_space = self.getFreeEnd() - self.getFreeStart();
 
         return current_free_space >= total_needed;
@@ -192,9 +178,97 @@ pub const Block = struct {
     fn getValueSize(self: *const Block, value: ValueType) u16 {
         _ = self;
         return switch (value) {
-            .number => 8,
-            .boolean => 1,
-            .text => |s| @as(u16, @intCast(s.len)),
+            .number => 1 + 4, // Tag + i32
+            .boolean => 1 + 1, // Tag + u8
+            .text => |s| 1 + 2 + @as(u16, @intCast(s.len)), // Tag + u16 len + data
         };
     }
 };
+
+// --- Testerna är inkluderade nedan ---
+
+test "Block: initialization and magic number" {
+    var block: Block = undefined;
+    block.initEmpty();
+
+    try std.testing.expect(block.isValid());
+    try std.testing.expectEqual(@as(u16, 0), block.getCellCount());
+    try std.testing.expectEqual(@as(u16, constants.BLOCK_SIZE), block.getFreeEnd());
+    try std.testing.expect(block.isDirty);
+}
+
+test "Block: insert and retrieve different types" {
+    var block: Block = undefined;
+    block.initEmpty();
+
+    try block.insertValue(.{ .number = 1234 });
+    try block.insertValue(.{ .text = "Zig" });
+    try block.insertValue(.{ .boolean = true });
+
+    try std.testing.expectEqual(@as(u16, 3), block.getCellCount());
+
+    const v0 = try block.getValue(0);
+    try std.testing.expectEqual(@as(i32, 1234), v0.number);
+
+    const v1 = try block.getValue(1);
+    try std.testing.expectEqualStrings("Zig", v1.text);
+
+    const v2 = try block.getValue(2);
+    try std.testing.expectEqual(true, v2.boolean);
+}
+
+test "Block: delete and compact space" {
+    var block: Block = undefined;
+    block.initEmpty();
+
+    try block.insertValue(.{ .text = "First" });
+    try block.insertValue(.{ .text = "Second" });
+    try block.insertValue(.{ .text = "Third" });
+
+    const initial_free_end = block.getFreeEnd();
+    try block.deleteValue(1);
+
+    try std.testing.expect(block.getFreeEnd() > initial_free_end);
+
+    const v0 = try block.getValue(0);
+    try std.testing.expectEqualStrings("First", v0.text);
+
+    const v2 = try block.getValue(2);
+    try std.testing.expectEqualStrings("Third", v2.text);
+
+    try std.testing.expectError(error.UnknownTypeTag, block.getValue(1));
+}
+
+test "Block: fill up until NoSpaceInBlock" {
+    var block: Block = undefined;
+    block.initEmpty();
+
+    // Skapa en text som tar upp nästan hälften av blocket.
+    // Vi räknar bort header (12) och marginal för slots.
+    const half_block = (constants.BLOCK_SIZE / 2) - 20;
+    const big_text = "A" ** half_block;
+
+    // Första insättningen (tar ~2000 bytes + 2 bytes slot)
+    try block.insertValue(.{ .text = big_text });
+
+    // Andra insättningen (nu är ca 4000 bytes använda)
+    try block.insertValue(.{ .text = big_text });
+
+    // Nu bör det finnas väldigt lite utrymme kvar (ca 40-80 bytes beroende på BLOCK_SIZE)
+    // Vi försöker trycka in en tredje stor text.
+    const result = block.insertValue(.{ .text = big_text });
+    try std.testing.expectError(error.NoSpaceInBlock, result);
+}
+
+test "Block: hasSpaceFor validation" {
+    var block: Block = undefined;
+    block.initEmpty();
+
+    const value = ValueType{ .text = "Hello" };
+    try std.testing.expect(block.hasSpaceFor(value));
+
+    const giant_text = "Z" ** (constants.BLOCK_SIZE - 25);
+    _ = block.insertValue(.{ .text = giant_text }) catch {};
+
+    try std.testing.expect(!block.hasSpaceFor(value));
+}

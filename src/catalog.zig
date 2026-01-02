@@ -33,3 +33,64 @@ pub const Catalog = struct {
         block.isDirty = true;
     }
 };
+
+test "Catalog: register and find tables" {
+    const allocator = std.testing.allocator;
+    const test_file = "test_catalog.ivodb";
+    std.fs.cwd().deleteFile(test_file) catch {};
+    defer std.fs.cwd().deleteFile(test_file) catch {};
+
+    var pager = try Pager.init(allocator, test_file);
+    defer pager.deinit();
+
+    var catalog = Catalog{ .pager = &pager };
+
+    // 1. Registrera två olika tabeller
+    try catalog.registerTable("users", 1);
+    try catalog.registerTable("posts", 5);
+
+    // 2. Hitta den första tabellen
+    const users_page = try catalog.getTableStart("users");
+    try std.testing.expect(users_page != null);
+    try std.testing.expectEqual(@as(u64, 1), users_page.?);
+
+    // 3. Hitta den andra tabellen
+    const posts_page = try catalog.getTableStart("posts");
+    try std.testing.expect(posts_page != null);
+    try std.testing.expectEqual(@as(u64, 5), posts_page.?);
+
+    // 4. Sök efter en tabell som inte finns
+    const missing_page = try catalog.getTableStart("ghost_table");
+    try std.testing.expect(missing_page == null);
+}
+
+test "Catalog: persistence" {
+    const allocator = std.testing.allocator;
+    const test_file = "test_catalog_persist.ivodb";
+    std.fs.cwd().deleteFile(test_file) catch {};
+    defer std.fs.cwd().deleteFile(test_file) catch {};
+
+    // Session 1: Spara i katalogen
+    {
+        var pager = try Pager.init(allocator, test_file);
+        defer pager.deinit();
+        var catalog = Catalog{ .pager = &pager };
+
+        // Viktigt: Block 0 måste vara initierat
+        const block = try pager.getBlock(0);
+        block.initEmpty();
+
+        try catalog.registerTable("persistent_table", 42);
+        try pager.flushAll();
+    }
+
+    // Session 2: Ladda från disk och hitta tabellen
+    {
+        var pager = try Pager.init(allocator, test_file);
+        defer pager.deinit();
+        var catalog = Catalog{ .pager = &pager };
+
+        const start_page = try catalog.getTableStart("persistent_table");
+        try std.testing.expectEqual(@as(u64, 42), start_page.?);
+    }
+}

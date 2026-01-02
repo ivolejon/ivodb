@@ -62,3 +62,87 @@ pub const TableIterator = struct {
         return fields;
     }
 };
+
+test "TableIterator: iterate raw values" {
+    const Pager = @import("pager.zig").Pager;
+    const allocator = std.testing.allocator;
+    const test_file = "test_iter_raw.ivodb";
+
+    // Rensa gammal data
+    std.fs.cwd().deleteFile(test_file) catch {};
+    defer std.fs.cwd().deleteFile(test_file) catch {};
+
+    var pager = try Pager.init(allocator, test_file);
+    defer pager.deinit();
+
+    // 1. Initiera tabellen.
+    // VIKTIGT: Sida 0 är katalogen, så vi börjar på sida 1.
+    var table = try Table.init(&pager, "test", 1);
+
+    // 2. Skriv data. insertDocument sätter block.isDirty = true.
+    const fields = [_]Field{
+        .{ .name = "id", .value = .{ .number = 100 } },
+    };
+    try table.insertDocument(&fields);
+
+    // 3. Tvinga ut data till disk så att getPageCount() ser sidorna
+    try pager.flushAll();
+
+    // 4. Starta iteratorn
+    var iter = TableIterator{ .table = &table };
+
+    // Nu bör .next() inte returnera null
+    const v1_opt = try iter.next();
+    try std.testing.expect(v1_opt != null);
+    try std.testing.expectEqual(@as(i32, 1), v1_opt.?.number);
+
+    const v2_opt = try iter.next();
+    try std.testing.expect(v2_opt != null);
+    try std.testing.expectEqualStrings("id", v2_opt.?.text);
+
+    const v3_opt = try iter.next();
+    try std.testing.expect(v3_opt != null);
+    try std.testing.expectEqual(@as(i32, 100), v3_opt.?.number);
+}
+
+test "TableIterator: nextDocument reconstruction" {
+    const Pager = @import("pager.zig").Pager;
+    const allocator = std.testing.allocator;
+    const test_file = "test_iter_doc.ivodb";
+    std.fs.cwd().deleteFile(test_file) catch {};
+    defer std.fs.cwd().deleteFile(test_file) catch {};
+
+    var pager = try Pager.init(allocator, test_file);
+    defer pager.deinit();
+
+    var table = try Table.init(&pager, "users", 1);
+
+    const doc1 = [_]Field{
+        .{ .name = "name", .value = .{ .text = "Alice" } },
+        .{ .name = "age", .value = .{ .number = 30 } },
+    };
+    try table.insertDocument(&doc1);
+
+    // --- VIKTIGT: Synka cachen med disken ---
+    try pager.flushAll();
+    // ----------------------------------------
+
+    var iter = TableIterator{ .table = &table };
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
+    const result = try iter.nextDocument(arena.allocator());
+
+    // Nu kommer denna passera!
+    try std.testing.expect(result != null);
+    const fields = result.?;
+
+    try std.testing.expectEqual(@as(usize, 2), fields.len);
+    try std.testing.expectEqualStrings("name", fields[0].name);
+    try std.testing.expectEqualStrings("Alice", fields[0].value.text);
+    try std.testing.expectEqualStrings("age", fields[1].name);
+    try std.testing.expectEqual(@as(i32, 30), fields[1].value.number);
+
+    try std.testing.expect((try iter.nextDocument(arena.allocator())) == null);
+}

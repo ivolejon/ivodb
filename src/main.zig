@@ -12,7 +12,13 @@ pub fn main() !void {
     const db = try Database.init(allocator, "data.ivodb");
     defer db.deinit(allocator);
 
-    var users = try db.getTable("users");
+    var users = db.getTable("users") catch |err| {
+        if (err == error.TableNotFound) {
+            std.debug.print("Tabellen 'users' hittades inte.\n", .{});
+        }
+        return err;
+    };
+
     var logs = try db.getTable("system_logs");
 
     try users.insertDocument(&.{.{ .name = "user", .value = .{ .text = "ivo" } }});

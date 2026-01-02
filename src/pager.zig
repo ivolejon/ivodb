@@ -36,6 +36,13 @@ pub const Pager = struct {
 
     /// Releases all resources, including the cache map and the disk manager.
     pub fn deinit(self: *Pager) void {
+        var it = self.lru_list.first;
+        while (it) |node_ptr| {
+            const item: *LruNode = @fieldParentPtr("node", node_ptr);
+            const next = node_ptr.next;
+            self.allocator.destroy(item);
+            it = next;
+        }
         self.blocks.deinit();
         self.disk_manager.deinit();
         self.lru_map.deinit();
@@ -120,3 +127,123 @@ pub const Pager = struct {
         }
     }
 };
+
+test "Pager init and deinit" {
+    const allocator = std.testing.allocator;
+
+    const pager = try Pager.init(allocator, "test_data.ivodb");
+    defer pager.deinit();
+
+    try pager.flushAll();
+    _ = try std.fs.cwd().deleteFile("test_data.ivodb");
+}
+
+test "Pager getBlock and flushBlock" {
+    const allocator = std.testing.allocator;
+
+    var pager = try Pager.init(allocator, "test_data.ivodb");
+    defer pager.deinit();
+
+    const page_id: u64 = 1;
+    const block = try pager.getBlock(page_id);
+    block.data[0] = 42;
+    block.isDirty = true;
+
+    try pager.flushBlock(page_id);
+
+    const block2 = try pager.getBlock(page_id);
+    try std.testing.expect(block2.data[0] == 42);
+
+    try pager.flushAll();
+    _ = try std.fs.cwd().deleteFile("test_data.ivodb");
+}
+
+test "Pager LRU eviction" {
+    const allocator = std.testing.allocator;
+    const test_file = "test_lru.ivodb";
+
+    // Ensure we start fresh
+    std.fs.cwd().deleteFile(test_file) catch {};
+
+    var pager = try Pager.init(allocator, test_file);
+    defer {
+        pager.deinit();
+        std.fs.cwd().deleteFile(test_file) catch {};
+    }
+
+    // 1. Fill the pager to its max capacity (0 to MAX_PAGES - 1)
+    var i: u64 = 0;
+    while (i < constants.MAX_PAGES) : (i += 1) {
+        const block = try pager.getBlock(i);
+        block.data[0] = @as(u8, @intCast(i));
+        block.isDirty = true;
+    }
+
+    // 2. Access block 0 and 1 to make them "Recently Used"
+    _ = try pager.getBlock(0);
+    _ = try pager.getBlock(1);
+
+    // 3. Add one more block to trigger eviction of the LRU block (which is index 2)
+    const new_block = try pager.getBlock(constants.MAX_PAGES);
+    new_block.data[0] = 99;
+    new_block.isDirty = true;
+
+    // 4. Verify eviction
+    // Since page 2 was evicted and it was dirty, the Pager should have
+    // flushed it to disk during eviction.
+    const fetched_evicted = try pager.getBlock(2);
+
+    // This should now be 2, because getBlock(2) re-read it from disk
+    // where it was saved during the eviction!
+    try std.testing.expectEqual(@as(u8, 2), fetched_evicted.data[0]);
+
+    // Verify that page 2 is now back in cache and something else was kicked out
+    try std.testing.expect(pager.blocks.contains(2));
+}
+
+test "Pager persistence across restarts" {
+    const allocator = std.testing.allocator;
+    const test_file = "test_persistence.ivodb";
+    std.fs.cwd().deleteFile(test_file) catch {};
+    defer std.fs.cwd().deleteFile(test_file) catch {};
+
+    const page_id: u64 = 5;
+
+    // Session 1: Write data and shut down
+    {
+        var pager = try Pager.init(allocator, test_file);
+        defer pager.deinit();
+
+        const block = try pager.getBlock(page_id);
+        block.data[0] = 77;
+        block.isDirty = true;
+        try pager.flushBlock(page_id);
+    }
+
+    // Session 2: Open again and verify that 77 is still there
+    {
+        var pager = try Pager.init(allocator, test_file);
+        defer pager.deinit();
+
+        const block = try pager.getBlock(page_id);
+        try std.testing.expectEqual(@as(u8, 77), block.data[0]);
+    }
+}
+
+test "Pager initializes new pages correctly" {
+    const allocator = std.testing.allocator;
+    const test_file = "test_init.ivodb";
+    std.fs.cwd().deleteFile(test_file) catch {};
+    defer std.fs.cwd().deleteFile(test_file) catch {};
+
+    var pager = try Pager.init(allocator, test_file);
+    defer pager.deinit();
+
+    // Fetch a page far out in the file that does not exist yet
+    const block = try pager.getBlock(100);
+
+    // Verify that initEmpty was called (we check the Magic Number)
+    // Assumes OFFSET_MAGIC is 7 and MAGIC_NUMBER is 0x42 based on your Block code
+    try std.testing.expect(block.isValid());
+    try std.testing.expectEqual(@as(u16, 0), block.getCellCount());
+}
