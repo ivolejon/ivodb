@@ -135,11 +135,11 @@ test "Pager can load and flush blocks" {
 
     var block = try pager.getBlock(page_id);
     block.initEmpty();
-    try block.insertValue(.{ .varchar = "Test string" });
+    try block.insertValue(.{ .text = "Test string" });
     try pager.flushBlock(page_id);
 
     const loaded_block = try pager.getBlock(page_id);
     const value = try loaded_block.getValue(0);
     try std.testing.expectEqual(block, loaded_block);
-    try std.testing.expectEqualStrings("Test string", value.varchar);
+    try std.testing.expectEqualStrings("Test string", value.text);
 }

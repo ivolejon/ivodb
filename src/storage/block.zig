@@ -68,8 +68,8 @@ pub const Block = struct {
         const tag = std.meta.intToEnum(TypeTag, tag_byte) catch return error.UnknownTypeTag;
 
         return switch (tag) {
-            .int => 1 + 4,
-            .varchar => 1 + 1 + @as(u16, self.data[offset + 1]),
+            .number => 1 + 4,
+            .text => 1 + 1 + @as(u16, self.data[offset + 1]),
             .boolean => 1 + 1,
         };
     }
@@ -80,8 +80,8 @@ pub const Block = struct {
 
         // Beräkna storlek baserat på aktivt fält i unionen
         const payload_size: u16 = switch (value) {
-            .int => 1 + 4, // Tag + i32
-            .varchar => |text| @as(u16, @intCast(text.len)) + 2, // Tag + Längd-byte + Text
+            .number => 1 + 4, // Tag + i32
+            .text => |text| @as(u16, @intCast(text.len)) + 2, // Tag + Längd-byte + Text
             .boolean => 1 + 1, // Tag + 1 byte
         };
 
@@ -96,10 +96,10 @@ pub const Block = struct {
 
         // Skriv data baserat på typ
         switch (value) {
-            .int => |val| {
+            .number => |val| {
                 std.mem.writeInt(i32, self.data[new_free_end + 1 ..][0..4], val, .little);
             },
-            .varchar => |text| {
+            .text => |text| {
                 self.data[new_free_end + 1] = @intCast(text.len);
                 @memcpy(self.data[new_free_end + 2 ..][0..text.len], text);
             },
@@ -128,14 +128,14 @@ pub const Block = struct {
         const tag = std.meta.intToEnum(TypeTag, raw_tag) catch return error.UnknownTypeTag;
 
         return switch (tag) {
-            .int => {
+            .number => {
                 const val = std.mem.readInt(i32, self.data[offset + 1 ..][0..4], .little);
-                return ValueType{ .int = val };
+                return ValueType{ .number = val };
             },
-            .varchar => {
+            .text => {
                 const len = self.data[offset + 1];
                 const text = self.data[offset + 2 .. offset + 2 + len];
-                return ValueType{ .varchar = text };
+                return ValueType{ .text = text };
             },
             .boolean => {
                 return ValueType{ .boolean = self.data[offset + 1] == 1 };
@@ -204,9 +204,9 @@ pub const Block = struct {
     fn getValueSize(self: *const Block, value: ValueType) u16 {
         _ = self;
         return switch (value) {
-            .int => 8, // i64
+            .number => 8, // i64
             .boolean => 1, // bool
-            .varchar => |s| @as(u16, @intCast(s.len)),
+            .text => |s| @as(u16, @intCast(s.len)),
         };
     }
 };

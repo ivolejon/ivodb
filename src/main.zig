@@ -21,11 +21,11 @@ pub fn main() !void {
     // 4. Sätt in lite testdata
     std.debug.print("--- Skriver data ---\n", .{});
 
-    try table.insert(.{ .int = 101 });
-    try table.insert(.{ .varchar = "Zig is fast" });
+    try table.insert(.{ .number = 101 });
+    try table.insert(.{ .text = "Zig is fast" });
     try table.insert(.{ .boolean = true });
-    try table.insert(.{ .int = 202 });
-    try table.insert(.{ .varchar = "Slotted pages are cool" });
+    try table.insert(.{ .number = 202 });
+    try table.insert(.{ .text = "Slotted pages are cool" });
 
     // 5. Läs tillbaka allt med vår TableIterator
     std.debug.print("\n--- Läser data via TableIterator ---\n", .{});
@@ -33,9 +33,9 @@ pub fn main() !void {
     var iter = TableIterator{ .table = &table };
     while (try iter.next()) |value| {
         switch (value) {
-            .int => |i| std.debug.print("Hittade Int: {d}\n", .{i}),
+            .number => |i| std.debug.print("Hittade Int: {d}\n", .{i}),
             .boolean => |b| std.debug.print("Hittade Bool: {}\n", .{b}),
-            .varchar => |s| std.debug.print("Hittade Str: {s}\n", .{s}),
+            .text => |s| std.debug.print("Hittade Str: {s}\n", .{s}),
         }
     }
 
