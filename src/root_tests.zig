@@ -9,4 +9,7 @@ comptime {
     _ = @import("types.zig");
     _ = @import("constants.zig");
     _ = @import("database.zig");
+    _ = @import("lexer.zig");
+    _ = @import("parser.zig");
+    _ = @import("executor.zig");
 }

@@ -5,6 +5,8 @@ pub const TokenType = enum {
     SET,
     GET,
     DELETE,
+    CREATE,
+    USE,
     IDENTIFIER,
     STRING,
     NUMBER,
@@ -96,12 +98,14 @@ pub const Lexer = struct {
 
     /// Reads text inside double quotes.
     fn readString(self: *Lexer) []const u8 {
+        // Skip the opening quote
         self.readChar();
         const start = self.position;
         while (self.ch != '"' and self.ch != 0) {
             self.readChar();
         }
         const literal = self.input[start..self.position];
+        // Consume the closing quote
         self.readChar();
         return literal;
     }
@@ -124,21 +128,26 @@ fn lookupIdentifier(ident: []const u8) TokenType {
     if (std.mem.eql(u8, ident, "SET")) return .SET;
     if (std.mem.eql(u8, ident, "GET")) return .GET;
     if (std.mem.eql(u8, ident, "DELETE")) return .DELETE;
+    if (std.mem.eql(u8, ident, "CREATE")) return .CREATE;
+    if (std.mem.eql(u8, ident, "USE")) return .USE;
     return .IDENTIFIER;
 }
 
-test "Lexer: Key-Value commands" {
-    const input = "SET user_1 = \"Ivo\"; GET user_1;";
+test "Lexer: Full Command Set" {
+    const input = "CREATE users; USE users; SET name = \"Ivo\";";
     var l = Lexer.init(input);
 
     const expected = [_]struct { type: TokenType, literal: []const u8 }{
+        .{ .type = .CREATE, .literal = "CREATE" },
+        .{ .type = .IDENTIFIER, .literal = "users" },
+        .{ .type = .SEMICOLON, .literal = ";" },
+        .{ .type = .USE, .literal = "USE" },
+        .{ .type = .IDENTIFIER, .literal = "users" },
+        .{ .type = .SEMICOLON, .literal = ";" },
         .{ .type = .SET, .literal = "SET" },
-        .{ .type = .IDENTIFIER, .literal = "user_1" },
+        .{ .type = .IDENTIFIER, .literal = "name" },
         .{ .type = .EQUALS, .literal = "=" },
         .{ .type = .STRING, .literal = "Ivo" },
-        .{ .type = .SEMICOLON, .literal = ";" },
-        .{ .type = .GET, .literal = "GET" },
-        .{ .type = .IDENTIFIER, .literal = "user_1" },
         .{ .type = .SEMICOLON, .literal = ";" },
         .{ .type = .EOF, .literal = "" },
     };
