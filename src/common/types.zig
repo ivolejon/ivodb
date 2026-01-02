@@ -12,3 +12,8 @@ pub const ValueType = union(TypeTag) {
     text: []const u8,
     boolean: bool,
 };
+
+pub const Field = struct {
+    name: []const u8, // Namnet på fältet, t.ex. "id" eller "username"
+    value: ValueType, // Själva värdet (number, text eller boolean)
+};

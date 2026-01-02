@@ -2,6 +2,7 @@ const std = @import("std");
 
 const common = @import("../common/mod.zig");
 const ValueType = common.types.ValueType;
+const Field = common.types.Field;
 const storage = @import("../storage/mod.zig");
 const Block = storage.Block;
 const Pager = storage.Pager;
@@ -25,27 +26,29 @@ pub const Table = struct {
         };
     }
 
-    pub fn insert(self: *Table, value: ValueType) !void {
+    pub fn insertDocument(self: *Table, fields: []const Field) !void {
         var page_id = self.total_pages - 1;
         var block = try self.pager.getBlock(page_id);
 
-        // Om det inte finns plats, hämta nästa sida
-        if (!block.hasSpaceFor(value)) {
+        // Enkel kontroll: ryms hela dokumentet?
+        // Varje fält behöver plats för: namn-strängen + värdet + headers
+        // Vi kollar om det finns ca 256 bytes kvar som en säkerhetsmarginal
+        if (block.getFreeEnd() - block.getFreeStart() < 256) {
             page_id += 1;
             block = try self.pager.getBlock(page_id);
-
-            // Om det är en helt ny sida, initiera den
-            if (block.getCellCount() == 0) {
-                block.initEmpty();
-            }
-
-            // Uppdatera tabellens storlek
-            if (page_id >= self.total_pages) {
-                self.total_pages = page_id + 1;
-            }
+            block.initEmpty();
+            self.total_pages = page_id + 1;
         }
 
-        try block.insertValue(value);
+        // 1. Spara antal fält i detta dokument (viktigt för läsning!)
+        try block.insertValue(.{ .number = @intCast(fields.len) });
+
+        // 2. Spara varje fält som ett par av [Namn, Värde]
+        for (fields) |field| {
+            try block.insertValue(.{ .text = field.name });
+            try block.insertValue(field.value);
+        }
+
         block.isDirty = true;
     }
 };
@@ -55,24 +58,50 @@ pub const TableIterator = struct {
     current_page_id: u64 = 0,
     cell_iterator: ?CellIterator = null,
 
+    /// Hämtar nästa råa värde (ValueType) från tabellen
     pub fn next(self: *TableIterator) !?ValueType {
         while (self.current_page_id < self.table.total_pages) {
-            // Om vi inte har en cell-iterator för nuvarande block, hämta blocket
             if (self.cell_iterator == null) {
                 const block = try self.table.pager.getBlock(self.current_page_id);
-                self.cell_iterator = .{ .block = block };
+                self.cell_iterator = CellIterator{ .block = block };
             }
 
-            // Försök hämta nästa rad i nuvarande block
             if (self.cell_iterator.?.next()) |val| {
                 return val;
             }
 
-            // Blocket är slut, gå till nästa block
             self.current_page_id += 1;
             self.cell_iterator = null;
         }
+        return null;
+    }
 
-        return null; // Hela tabellen är genomläst
+    /// Hämtar nästa hela dokument ([]Field)
+    pub fn nextDocument(self: *TableIterator, allocator: std.mem.Allocator) !?[]Field {
+        // 1. Läs "markören" med next() - INTE nextDocument()
+        const header = try self.next() orelse return null;
+
+        // Säkerställ att vi faktiskt läste ett nummer
+        const num_fields = @as(usize, @intCast(header.number));
+
+        // 2. Allokera minne för fälten
+        var fields = try allocator.alloc(Field, num_fields);
+        // Om något går fel under inläsningen, städa upp
+        errdefer allocator.free(fields);
+
+        // 3. Läs in fält-paren (namn + värde)
+        for (0..num_fields) |i| {
+            // Hämta namnet (ska vara text)
+            const name_val = try self.next() orelse return error.CorruptDocument;
+            // Hämta värdet (kan vara vad som helst)
+            const data_val = try self.next() orelse return error.CorruptDocument;
+
+            fields[i] = .{
+                .name = try allocator.dupe(u8, name_val.text),
+                .value = data_val,
+            };
+        }
+
+        return fields;
     }
 };

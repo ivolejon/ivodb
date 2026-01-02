@@ -51,7 +51,7 @@ pub const Block = struct {
         std.mem.writeInt(u16, self.data[OFFSET_FREE_END .. OFFSET_FREE_END + 2], value, .little);
     }
 
-    fn getFreeStart(self: *const Block) u16 {
+    pub fn getFreeStart(self: *const Block) u16 {
         return std.mem.readInt(u16, self.data[OFFSET_FREE_START .. OFFSET_FREE_START + 2], .little);
     }
 

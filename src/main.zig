@@ -1,8 +1,6 @@
 const std = @import("std");
 const print = std.debug.print;
 
-const ivodb = @import("ivodb");
-
 const storage = @import("storage/mod.zig");
 const Pager = storage.Pager;
 
@@ -10,41 +8,59 @@ const engine = @import("engine/mod.zig");
 const Table = engine.Table;
 const TableIterator = engine.TableIterator;
 
+// Vi behöver importera Field för att kunna skapa dokument
+const common = @import("common/mod.zig");
+const Field = common.types.Field;
+
 pub fn main() !void {
-    const allocator = std.heap.page_allocator;
+    // Vi använder en ArenaAllocator för att enkelt städa upp
+    // de strängar som skapas när vi läser tillbaka dokumenten.
+    var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena_state.deinit();
+    const allocator = arena_state.allocator();
+
     var pager = try storage.Pager.init(allocator, "data.ivodb");
     defer pager.deinit();
 
-    //Skapa tabell-objektet
-    var table = try Table.init(&pager, "users");
+    var table = try Table.init(&pager, "users2");
 
-    // 4. Sätt in lite testdata
-    std.debug.print("--- Skriver data ---\n", .{});
+    // 1. Skapa och sätt in ett dokument
+    print("--- Skriver dokument ---\n", .{});
 
-    try table.insert(.{ .number = 101 });
-    try table.insert(.{ .text = "Zig is fast" });
-    try table.insert(.{ .boolean = true });
-    try table.insert(.{ .number = 202 });
-    try table.insert(.{ .text = "Slotted pages are cool" });
+    const doc1 = &[_]Field{
+        .{ .name = "id", .value = .{ .number = 101 } },
+        .{ .name = "msg", .value = .{ .text = "Zig is fast" } },
+        .{ .name = "ok", .value = .{ .boolean = true } },
+    };
 
-    // 5. Läs tillbaka allt med vår TableIterator
-    std.debug.print("\n--- Läser data via TableIterator ---\n", .{});
+    const doc2 = &[_]Field{
+        .{ .name = "id", .value = .{ .number = 202 } },
+        .{ .name = "msg", .value = .{ .text = "Slotted pages are cool" } },
+    };
+
+    try table.insertDocument(doc1);
+    try table.insertDocument(doc2);
+
+    // 2. Läs tillbaka dokumenten
+    print("\n--- Läser data via nextDocument ---\n", .{});
 
     var iter = TableIterator{ .table = &table };
-    while (try iter.next()) |value| {
-        switch (value) {
-            .number => |i| std.debug.print("Hittade Int: {d}\n", .{i}),
-            .boolean => |b| std.debug.print("Hittade Bool: {}\n", .{b}),
-            .text => |s| std.debug.print("Hittade Str: {s}\n", .{s}),
+
+    // Vi loopar så länge nextDocument returnerar något
+    while (try iter.nextDocument(allocator)) |fields| {
+        print("Dokument: {{ ", .{});
+        for (fields, 0..) |field, i| {
+            print("\"{s}\": ", .{field.name});
+            switch (field.value) {
+                .number => |n| print("{d}", .{n}),
+                .text => |t| print("\"{s}\"", .{t}),
+                .boolean => |b| print("{}", .{b}),
+            }
+            if (i < fields.len - 1) print(", ", .{});
         }
+        print(" }}\n", .{});
     }
 
-    // 6. Spara allt till disk innan vi stänger
     try pager.flushAll();
-    std.debug.print("\nAllt sparat till db!\n", .{});
-}
-
-test {
-    // This ensures nested tests are discovered
-    _ = storage;
+    print("\nAllt sparat till db!\n", .{});
 }
