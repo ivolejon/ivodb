@@ -185,8 +185,6 @@ pub const Block = struct {
     }
 };
 
-// --- Testerna är inkluderade nedan ---
-
 test "Block: initialization and magic number" {
     var block: Block = undefined;
     block.initEmpty();
@@ -243,19 +241,19 @@ test "Block: fill up until NoSpaceInBlock" {
     var block: Block = undefined;
     block.initEmpty();
 
-    // Skapa en text som tar upp nästan hälften av blocket.
-    // Vi räknar bort header (12) och marginal för slots.
+    // Create a text that takes up almost half of the block.
+    // We subtract the header (12) and margin for slots.
     const half_block = (constants.BLOCK_SIZE / 2) - 20;
     const big_text = "A" ** half_block;
 
-    // Första insättningen (tar ~2000 bytes + 2 bytes slot)
+    // First insertion (takes ~2000 bytes + 2 bytes slot)
     try block.insertValue(.{ .text = big_text });
 
-    // Andra insättningen (nu är ca 4000 bytes använda)
+    // Second insertion (now about 4000 bytes are used)
     try block.insertValue(.{ .text = big_text });
 
-    // Nu bör det finnas väldigt lite utrymme kvar (ca 40-80 bytes beroende på BLOCK_SIZE)
-    // Vi försöker trycka in en tredje stor text.
+    // Now there should be very little space left (about 40-80 bytes depending on BLOCK_SIZE)
+    // We try to insert a third large text.
     const result = block.insertValue(.{ .text = big_text });
     try std.testing.expectError(error.NoSpaceInBlock, result);
 }

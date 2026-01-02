@@ -68,30 +68,30 @@ test "TableIterator: iterate raw values" {
     const allocator = std.testing.allocator;
     const test_file = "test_iter_raw.ivodb";
 
-    // Rensa gammal data
+    // Clean up old data
     std.fs.cwd().deleteFile(test_file) catch {};
     defer std.fs.cwd().deleteFile(test_file) catch {};
 
     var pager = try Pager.init(allocator, test_file);
     defer pager.deinit();
 
-    // 1. Initiera tabellen.
-    // VIKTIGT: Sida 0 är katalogen, så vi börjar på sida 1.
+    // 1. Initialize the table.
+    // IMPORTANT: Page 0 is the catalog, so we start at page 1.
     var table = try Table.init(&pager, "test", 1);
 
-    // 2. Skriv data. insertDocument sätter block.isDirty = true.
+    // 2. Write data. insertDocument sets block.isDirty = true.
     const fields = [_]Field{
         .{ .name = "id", .value = .{ .number = 100 } },
     };
     try table.insertDocument(&fields);
 
-    // 3. Tvinga ut data till disk så att getPageCount() ser sidorna
+    // 3. Force data to disk so that getPageCount() sees the pages
     try pager.flushAll();
 
-    // 4. Starta iteratorn
+    // 4. Start the iterator
     var iter = TableIterator{ .table = &table };
 
-    // Nu bör .next() inte returnera null
+    // Now .next() should not return null
     const v1_opt = try iter.next();
     try std.testing.expect(v1_opt != null);
     try std.testing.expectEqual(@as(i32, 1), v1_opt.?.number);
@@ -123,9 +123,9 @@ test "TableIterator: nextDocument reconstruction" {
     };
     try table.insertDocument(&doc1);
 
-    // --- VIKTIGT: Synka cachen med disken ---
+    // --- IMPORTANT: Sync the cache with the disk ---
     try pager.flushAll();
-    // ----------------------------------------
+    // -----------------------------------------------
 
     var iter = TableIterator{ .table = &table };
 
@@ -134,7 +134,7 @@ test "TableIterator: nextDocument reconstruction" {
 
     const result = try iter.nextDocument(arena.allocator());
 
-    // Nu kommer denna passera!
+    // Now this will pass!
     try std.testing.expect(result != null);
     const fields = result.?;
 

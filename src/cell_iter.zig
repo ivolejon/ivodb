@@ -31,7 +31,7 @@ pub const CellIterator = struct {
 test "CellIterator: iterate values in a block" {
     // const allocator = std.testing.allocator;
 
-    // Vi skapar ett block manuellt i minnet för att testa iteratorn
+    // We create a block manually in memory to test the iterator
     var block = @import("block.zig").Block{
         .id = 0,
         .isDirty = false,
@@ -39,29 +39,29 @@ test "CellIterator: iterate values in a block" {
     };
     block.initEmpty();
 
-    // Lägg till några testvärden
+    // Add some test values
     try block.insertValue(.{ .number = 10 });
     try block.insertValue(.{ .text = "hello" });
     try block.insertValue(.{ .boolean = true });
 
     var iter = CellIterator{ .block = &block };
 
-    // Verifiera första värdet
+    // Verify the first value
     const v1 = iter.next();
     try std.testing.expect(v1 != null);
     try std.testing.expectEqual(@as(i32, 10), v1.?.number);
 
-    // Verifiera andra värdet
+    // Verify the second value
     const v2 = iter.next();
     try std.testing.expect(v2 != null);
     try std.testing.expectEqualStrings("hello", v2.?.text);
 
-    // Verifiera tredje värdet
+    // Verify the third value
     const v3 = iter.next();
     try std.testing.expect(v3 != null);
     try std.testing.expectEqual(true, v3.?.boolean);
 
-    // Slutet på blocket
+    // End of the block
     try std.testing.expect(iter.next() == null);
 }
 

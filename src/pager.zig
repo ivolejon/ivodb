@@ -131,7 +131,7 @@ pub const Pager = struct {
 test "Pager init and deinit" {
     const allocator = std.testing.allocator;
 
-    const pager = try Pager.init(allocator, "test_data.ivodb");
+    var pager = try Pager.init(allocator, "test_data.ivodb");
     defer pager.deinit();
 
     try pager.flushAll();

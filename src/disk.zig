@@ -52,7 +52,7 @@ pub const DiskManager = struct {
 
 test "DiskManager: basic read and write" {
     const test_file = "test_disk_basic.ivodb";
-    // Rensa om den finns
+    // Clean up if it exists
     std.fs.cwd().deleteFile(test_file) catch {};
     defer std.fs.cwd().deleteFile(test_file) catch {};
 
@@ -64,7 +64,7 @@ test "DiskManager: basic read and write" {
     write_buffer[0] = 'H';
     write_buffer[1] = 'i';
 
-    // Skriv till sida 2 (offset 8192 om blockstorlek är 4096)
+    // Write to page 2 (offset 8192 if block size is 4096)
     try dm.writePage(page_id, &write_buffer);
 
     var read_buffer = [_]u8{0} ** constants.BLOCK_SIZE;
@@ -84,11 +84,11 @@ test "DiskManager: read non-existent page" {
     defer dm.deinit();
 
     var read_buffer = [_]u8{0} ** constants.BLOCK_SIZE;
-    // Läs sida 10 i en tom fil
+    // Read page 10 in an empty file
     const bytes_read = try dm.readPage(10, &read_buffer);
 
     try std.testing.expectEqual(@as(usize, 0), bytes_read);
-    // Bufferten ska vara nollställd enligt koden
+    // The buffer should be zeroed according to the code
     try std.testing.expectEqual(@as(u8, 0), read_buffer[0]);
 }
 
@@ -104,11 +104,11 @@ test "DiskManager: page count calculation" {
 
     const data = [_]u8{0} ** constants.BLOCK_SIZE;
 
-    // Skriv sida 0
+    // Write page 0
     try dm.writePage(0, &data);
     try std.testing.expectEqual(@as(u64, 1), try dm.getPageCount());
 
-    // Skriv sida 4 (skapar "hål" i filen, men filstorleken blir 5 sidor)
+    // Write page 4 (creates a "hole" in the file, but file size becomes 5 pages)
     try dm.writePage(4, &data);
     try std.testing.expectEqual(@as(u64, 5), try dm.getPageCount());
 }
