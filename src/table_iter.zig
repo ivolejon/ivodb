@@ -5,11 +5,13 @@ const ValueType = @import("types.zig").ValueType;
 const Field = @import("types.zig").Field;
 const Allocator = std.mem.Allocator;
 
+/// An iterator that scans through a table's pages to retrieve raw values or full documents.
 pub const TableIterator = struct {
     table: *Table,
     relative_page_id: u64 = 0,
     cell_iterator: ?CellIterator = null,
 
+    /// Retrieves the next raw ValueType from the table by traversing pages and cells.
     pub fn next(self: *TableIterator) !?ValueType {
         while (self.relative_page_id < self.table.total_pages) {
             if (self.cell_iterator == null) {
@@ -27,17 +29,17 @@ pub const TableIterator = struct {
                 return val;
             }
 
-            // Sidan slut, gå till nästa RELATIVA sida
             self.relative_page_id += 1;
             self.cell_iterator = null;
         }
         return null;
     }
 
+    /// Reconstructs a complete document from the data stream using the provided allocator.
+    /// Expects a numeric header indicating the number of fields in the document.
     pub fn nextDocument(self: *TableIterator, allocator: Allocator) !?[]Field {
         const header = try self.next() orelse return null;
 
-        // union-panics
         if (header != .number) return error.InvalidDocumentHeader;
         const num_fields = @as(usize, @intCast(header.number));
 

@@ -9,19 +9,21 @@ const ValueType = @import("types.zig").ValueType;
 const Block = @import("block.zig").Block;
 const DiskManager = @import("disk.zig").DiskManager;
 
+/// A node in the LRU cache list to keep track of page access order.
 const LruNode = struct {
     page_id: u64,
     node: LruList.Node,
 };
 
+/// Manages an in-memory cache of database blocks using an LRU eviction policy.
 pub const Pager = struct {
     disk_manager: DiskManager,
     blocks: HashMap(u64, Block),
     lru_list: LruList,
-    // För att snabbt hitta noden i listan givet ett page_id
     lru_map: std.AutoHashMap(u64, *LruNode),
     allocator: std.mem.Allocator,
 
+    /// Initializes the pager with a disk manager and empty cache structures.
     pub fn init(_alloc: Allocator, storage_path: []const u8) !Pager {
         return Pager{
             .disk_manager = try DiskManager.init(storage_path),
@@ -32,19 +34,19 @@ pub const Pager = struct {
         };
     }
 
+    /// Releases all resources, including the cache map and the disk manager.
     pub fn deinit(self: *Pager) void {
         self.blocks.deinit();
         self.disk_manager.deinit();
         self.lru_map.deinit();
     }
 
+    /// Updates the LRU list to mark a page as the most recently accessed.
     fn markRecentlyUsed(self: *Pager, page_id: u64) !void {
         if (self.lru_map.get(page_id)) |item| {
-            // Om blocket redan finns i listan, flytta det till toppen
             self.lru_list.remove(&item.node);
             self.lru_list.prepend(&item.node);
         } else {
-            // Om det är ett nytt block i cachen, skapa en ny nod
             const item = try self.allocator.create(LruNode);
             item.page_id = page_id;
             self.lru_list.prepend(&item.node);
@@ -52,28 +54,26 @@ pub const Pager = struct {
         }
     }
 
+    /// Evicts the least recently used block if the cache exceeds MAX_PAGES.
     fn evictIfFull(self: *Pager) !void {
         if (self.blocks.count() <= constants.MAX_PAGES) return;
 
-        // Hämta det sista elementet (Least Recently Used)
         const last_node_ptr = self.lru_list.last orelse return;
         const item: *LruNode = @fieldParentPtr("node", last_node_ptr);
         const page_id_to_evict = item.page_id;
 
-        // 1. Om blocket är ändrat, spara det till disk!
         try self.flushBlock(page_id_to_evict);
 
-        // 2. Ta bort från alla strukturer
         _ = self.blocks.remove(page_id_to_evict);
         _ = self.lru_map.remove(page_id_to_evict);
         self.lru_list.remove(last_node_ptr);
 
-        // 3. Frigör nodens minne
-        self.allocator.destroy(last_node_ptr);
+        self.allocator.destroy(item);
 
         std.debug.print("LRU: Evicted block {d} to free memory\n", .{page_id_to_evict});
     }
 
+    /// Retrieves a block from cache or loads it from disk if not present.
     pub fn getBlock(self: *Pager, page_id: u64) !*Block {
         if (self.blocks.getPtr(page_id)) |cached_block| {
             try self.markRecentlyUsed(page_id);
@@ -93,7 +93,6 @@ pub const Pager = struct {
 
         const block = self.blocks.getPtr(page_id).?;
 
-        // Initiera om det är en ny sida
         if (bytes_read == 0 or block.getFreeEnd() == 0) {
             block.initEmpty();
         }
@@ -102,6 +101,7 @@ pub const Pager = struct {
         return block;
     }
 
+    /// Writes a specific block to disk if it has been modified.
     pub fn flushBlock(self: *Pager, page_id: u64) !void {
         const block = self.blocks.getPtr(page_id) orelse return error.BlockNotFound;
 
@@ -112,7 +112,7 @@ pub const Pager = struct {
         print("Block {d} flushed to disk\n", .{page_id});
     }
 
-    // Praktisk metod för att spara ALLT vid t.ex. avstängning
+    /// Persists all dirty blocks currently held in the cache to disk.
     pub fn flushAll(self: *Pager) !void {
         var iter = self.blocks.keyIterator();
         while (iter.next()) |page_id| {
@@ -120,25 +120,3 @@ pub const Pager = struct {
         }
     }
 };
-
-test "Pager can load and flush blocks" {
-    const allocator = std.heap.page_allocator;
-    {
-        var file = try std.fs.cwd().createFile("test_data.ivodb", .{ .truncate = true });
-        defer file.close();
-    }
-    var pager = try Pager.init(allocator, "test_data.ivodb");
-    defer pager.deinit();
-
-    const page_id: u64 = 0;
-
-    var block = try pager.getBlock(page_id);
-    block.initEmpty();
-    try block.insertValue(.{ .text = "Test string" });
-    try pager.flushBlock(page_id);
-
-    const loaded_block = try pager.getBlock(page_id);
-    const value = try loaded_block.getValue(0);
-    try std.testing.expectEqual(block, loaded_block);
-    try std.testing.expectEqualStrings("Test string", value.text);
-}

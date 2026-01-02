@@ -6,34 +6,39 @@ const ValueType = types.ValueType;
 const TypeTag = types.TypeTag;
 const CellIterator = @import("cell_iter.zig").CellIterator;
 
+/// Represents a fixed-size data block using a slotted page architecture.
+/// Slots grow from the top (after header), and data grows from the bottom.
 pub const Block = struct {
     id: u64,
     isDirty: bool,
     data: [constants.BLOCK_SIZE]u8,
 
     const HEADER_SIZE: u16 = 12;
-    const OFFSET_TYPE: usize = 0; // 1 byte
-    const OFFSET_CELL_COUNT: usize = 1; // 2 bytes
-    const OFFSET_FREE_START: usize = 3; // 2 bytes (där slot-arrayen slutar)
-    const OFFSET_FREE_END: usize = 5; // 2 bytes (där data börjar i botten)
+    const OFFSET_TYPE: usize = 0;
+    const OFFSET_CELL_COUNT: usize = 1;
+    const OFFSET_FREE_START: usize = 3;
+    const OFFSET_FREE_END: usize = 5;
     const MAGIC_NUMBER: u8 = 0x42;
-    const OFFSET_MAGIC: usize = 7; // 1 byte
+    const OFFSET_MAGIC: usize = 7;
 
+    /// Formats the block as an empty slotted page with a valid magic number.
     pub fn initEmpty(self: *Block) void {
         @memset(&self.data, 0);
         self.data[OFFSET_MAGIC] = MAGIC_NUMBER;
         self.setCellCount(0);
-        self.setFreeEnd(constants.BLOCK_SIZE); // Börja vid 4096
-        self.setFreeStart(HEADER_SIZE); // Börja skriva slots efter headern
+        self.setFreeEnd(constants.BLOCK_SIZE);
+        self.setFreeStart(HEADER_SIZE);
         self.isDirty = true;
     }
 
+    /// Returns an iterator to traverse all cells stored within this block.
     pub fn iterator(self: *const Block) CellIterator {
         return CellIterator{
             .block = self,
         };
     }
 
+    /// Retrieves the number of occupied slots in the block.
     pub fn getCellCount(self: *const Block) u16 {
         return std.mem.readInt(u16, self.data[OFFSET_CELL_COUNT..][0..2], .little);
     }
@@ -42,8 +47,8 @@ pub const Block = struct {
         std.mem.writeInt(u16, self.data[OFFSET_CELL_COUNT..][0..2], count, .little);
     }
 
+    /// Returns the offset where the free space ends and data starts.
     pub fn getFreeEnd(self: *const Block) u16 {
-        // Läser byte 5 och 6
         return std.mem.readInt(u16, self.data[OFFSET_FREE_END .. OFFSET_FREE_END + 2], .little);
     }
 
@@ -51,6 +56,7 @@ pub const Block = struct {
         std.mem.writeInt(u16, self.data[OFFSET_FREE_END .. OFFSET_FREE_END + 2], value, .little);
     }
 
+    /// Returns the offset where free space begins (end of slot array).
     pub fn getFreeStart(self: *const Block) u16 {
         return std.mem.readInt(u16, self.data[OFFSET_FREE_START .. OFFSET_FREE_START + 2], .little);
     }
@@ -59,6 +65,7 @@ pub const Block = struct {
         std.mem.writeInt(u16, self.data[OFFSET_FREE_START .. OFFSET_FREE_START + 2], value, .little);
     }
 
+    /// Checks if the block contains the correct magic number.
     pub fn isValid(self: *Block) bool {
         return self.data[OFFSET_MAGIC] == MAGIC_NUMBER;
     }
@@ -74,15 +81,15 @@ pub const Block = struct {
         };
     }
 
+    /// Inserts a value into the block, updating the slot array and free space pointers.
     pub fn insertValue(self: *Block, value: ValueType) !void {
         const current_free_start = self.getFreeStart();
         const current_free_end = self.getFreeEnd();
 
-        // Beräkna storlek baserat på aktivt fält i unionen
         const payload_size: u16 = switch (value) {
-            .number => 1 + 4, // Tag + i32
-            .text => |text| @as(u16, @intCast(text.len)) + 2, // Tag + Längd-byte + Text
-            .boolean => 1 + 1, // Tag + 1 byte
+            .number => 1 + 4,
+            .text => |text| @as(u16, @intCast(text.len)) + 2,
+            .boolean => 1 + 1,
         };
 
         if (current_free_end - current_free_start < payload_size + 2) {
@@ -91,10 +98,8 @@ pub const Block = struct {
 
         const new_free_end = current_free_end - payload_size;
 
-        // Skriv taggen först
         self.data[new_free_end] = @intFromEnum(std.meta.activeTag(value));
 
-        // Skriv data baserat på typ
         switch (value) {
             .number => |val| {
                 std.mem.writeInt(i32, self.data[new_free_end + 1 ..][0..4], val, .little);
@@ -108,7 +113,6 @@ pub const Block = struct {
             },
         }
 
-        // Uppdatera slots och header
         const slot_pos = current_free_start;
         std.mem.writeInt(u16, self.data[slot_pos..][0..2], new_free_end, .little);
 
@@ -118,6 +122,7 @@ pub const Block = struct {
         self.isDirty = true;
     }
 
+    /// Retrieves a value by its index in the slot array.
     pub fn getValue(self: *const Block, index: u16) !ValueType {
         if (index >= self.getCellCount()) return error.IndexOutOfBounds;
 
@@ -142,31 +147,24 @@ pub const Block = struct {
             },
         };
     }
+
+    /// Removes a value and compacts the data to reclaim space.
     pub fn deleteValue(self: *Block, index: u16) !void {
         const count = self.getCellCount();
         if (index >= count) return error.IndexOutOfBounds;
 
-        // Hitta den rad vi ska ta bort
         const slot_pos = HEADER_SIZE + (index * 2);
         const offset_to_delete = std.mem.readInt(u16, self.data[slot_pos..][0..2], .little);
 
-        // Vi behöver veta storleken på det vi tar bort för att kunna flytta resten
-        // Här använder vi en hjälpmetod (se nedan)
         const size_to_delete = try self.getCellSize(offset_to_delete);
 
-        // Flytta all data som ligger "under" (lägre offset) den raderade raden
-        // I ett slotted page-block ligger nyare rader på lägre offsets.
-        // Vi flyttar data från FreeEnd fram till offset_to_delete.
         const current_free_end = self.getFreeEnd();
         const bytes_to_move = offset_to_delete - current_free_end;
 
         if (bytes_to_move > 0) {
-            // Flytta datan "nedåt" (mot högre adresser) för att täppa till hålet
             std.mem.copyBackwards(u8, self.data[current_free_end + size_to_delete .. offset_to_delete + size_to_delete], self.data[current_free_end..offset_to_delete]);
         }
 
-        // Uppdatera alla ANDRA slots som påverkades av flytten
-        // Alla rader som hade en offset lägre än den vi tog bort har nu flyttats framåt.
         var i: u16 = 0;
         while (i < count) : (i += 1) {
             const s_pos = HEADER_SIZE + (i * 2);
@@ -176,36 +174,26 @@ pub const Block = struct {
             }
         }
 
-        // 4. Markera den borttagna sloten som tom (0)
         std.mem.writeInt(u16, self.data[slot_pos..][0..2], 0, .little);
 
-        // 5. Uppdatera FreeEnd
         self.setFreeEnd(current_free_end + size_to_delete);
         self.isDirty = true;
     }
 
+    /// Checks if the block has sufficient space to store the given value.
     pub fn hasSpaceFor(self: *const Block, value: ValueType) bool {
-        // 1. Beräkna hur mycket plats datan tar
         const data_size = self.getValueSize(value);
-
-        // 2. Beräkna totalt behov:
-        // + data_size (själva värdet)
-        // + 1 byte (för TypeTag/Header i cellen)
-        // + 2 bytes (för den nya slot-pekaren i början av blocket)
         const total_needed = data_size + 1 + 2;
-
-        // 3. Kolla tillgängligt utrymme mellan slots och data
         const current_free_space = self.getFreeEnd() - self.getFreeStart();
 
         return current_free_space >= total_needed;
     }
 
-    // Hjälpfunktion för att veta storleken på olika typer
     fn getValueSize(self: *const Block, value: ValueType) u16 {
         _ = self;
         return switch (value) {
-            .number => 8, // i64
-            .boolean => 1, // bool
+            .number => 8,
+            .boolean => 1,
             .text => |s| @as(u16, @intCast(s.len)),
         };
     }
