@@ -3,11 +3,11 @@ const common = @import("../common/mod.zig");
 const ValueType = common.types.ValueType;
 const TypeTag = common.types.TypeTag;
 
-pub const Iterator = struct {
+pub const CellIterator = struct {
     block: *const Block,
     current_index: u16 = 0,
 
-    pub fn next(self: *Iterator) ?ValueType {
+    pub fn next(self: *CellIterator) ?ValueType {
         const count = self.block.getCellCount();
 
         // Loopa tills vi hittar en aktiv cell eller når slutet

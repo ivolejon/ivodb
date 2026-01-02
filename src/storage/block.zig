@@ -4,7 +4,7 @@ const constants = common.constants;
 const types = common.types;
 const ValueType = types.ValueType;
 const TypeTag = types.TypeTag;
-const CellIterator = @import("cell_iter.zig").Iterator;
+const CellIterator = @import("cell_iter.zig").CellIterator;
 
 pub const Block = struct {
     id: u64,
