@@ -1,12 +1,9 @@
 const std = @import("std");
 
-const common = @import("../common/mod.zig");
-const ValueType = common.types.ValueType;
-const Field = common.types.Field;
-const storage = @import("../storage/mod.zig");
-const Block = storage.Block;
-const Pager = storage.Pager;
-const CellIterator = storage.CellIterator;
+const ValueType = @import("types.zig").ValueType;
+const Field = @import("types.zig").Field;
+const Block = @import("block.zig").Block;
+const Pager = @import("pager.zig").Pager;
 
 pub const Table = struct {
     pager: *Pager,

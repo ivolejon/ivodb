@@ -1,7 +1,7 @@
 const std = @import("std");
-const common = @import("../common/mod.zig");
-const constants = common.constants;
-const types = common.types;
+
+const constants = @import("constants.zig");
+const types = @import("types.zig");
 const ValueType = types.ValueType;
 const TypeTag = types.TypeTag;
 const CellIterator = @import("cell_iter.zig").CellIterator;

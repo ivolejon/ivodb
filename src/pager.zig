@@ -4,9 +4,8 @@ const Allocator = std.mem.Allocator;
 const print = std.debug.print;
 const LruList = std.DoublyLinkedList;
 
-const common = @import("../common/mod.zig");
-const constants = common.constants;
-const ValueType = common.types.ValueType;
+const constants = @import("constants.zig");
+const ValueType = @import("types.zig").ValueType;
 const Block = @import("block.zig").Block;
 const DiskManager = @import("disk.zig").DiskManager;
 

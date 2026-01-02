@@ -1,10 +1,8 @@
 const std = @import("std");
 const Table = @import("table.zig").Table;
-const storage = @import("../storage/mod.zig");
-const CellIterator = storage.CellIterator;
-const common = @import("../common/mod.zig");
-const ValueType = common.types.ValueType;
-const Field = common.types.Field;
+const CellIterator = @import("cell_iter.zig").CellIterator;
+const ValueType = @import("types.zig").ValueType;
+const Field = @import("types.zig").Field;
 const Allocator = std.mem.Allocator;
 
 pub const TableIterator = struct {

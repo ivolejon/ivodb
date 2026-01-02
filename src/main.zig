@@ -1,19 +1,15 @@
 const std = @import("std");
 const print = std.debug.print;
-
-const storage = @import("storage/mod.zig");
-const engine = @import("engine/mod.zig");
-const common = @import("common/mod.zig");
-
-const Field = common.types.Field;
-const TableIterator = engine.TableIterator;
+const TableIterator = @import("table_iter.zig").TableIterator;
+const Field = @import("types.zig").Field;
+const Database = @import("database.zig").Database;
 
 pub fn main() !void {
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_state.deinit();
     const allocator = arena_state.allocator();
 
-    const db = try engine.Database.init(allocator, "data.ivodb");
+    const db = try Database.init(allocator, "data.ivodb");
     defer db.deinit(allocator);
 
     var users = try db.getTable("users");

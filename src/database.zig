@@ -1,6 +1,6 @@
 const std = @import("std");
-const Pager = @import("../storage/mod.zig").Pager;
-const Catalog = @import("../storage/mod.zig").Catalog;
+const Pager = @import("pager.zig").Pager;
+const Catalog = @import("catalog.zig").Catalog;
 const Table = @import("table.zig").Table;
 
 pub const Database = struct {

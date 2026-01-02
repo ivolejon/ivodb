@@ -1,6 +1,5 @@
 const std = @import("std");
-const common = @import("../common/mod.zig");
-const constants = common.constants;
+const constants = @import("constants.zig");
 
 pub const DiskManager = struct {
     file: std.fs.File,

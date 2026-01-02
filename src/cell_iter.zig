@@ -1,7 +1,6 @@
 const Block = @import("block.zig").Block;
-const common = @import("../common/mod.zig");
-const ValueType = common.types.ValueType;
-const TypeTag = common.types.TypeTag;
+const ValueType = @import("types.zig").ValueType;
+const TypeTag = @import("types.zig").TypeTag;
 
 pub const CellIterator = struct {
     block: *const Block,

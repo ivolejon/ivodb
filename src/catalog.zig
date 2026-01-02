@@ -1,6 +1,6 @@
 const std = @import("std");
 const Pager = @import("pager.zig").Pager;
-const ValueType = @import("../common/mod.zig").types.ValueType;
+const ValueType = @import("types.zig").ValueType;
 
 pub const Catalog = struct {
     pager: *Pager,
