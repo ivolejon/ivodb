@@ -11,7 +11,6 @@ A lightweight, document-oriented database engine written in Zig, featuring a cus
 - [x] **Database Catalog**: Mapping table names to page IDs in Block 0.
 - [x] **Table Logic**: Page-aware document insertion and isolation.
 - [x] **Iterators**: Cell-level and Table-level data traversal.
-- [x] **Documentation**: All core files documented with English `///` comments.
 
 ---
 
