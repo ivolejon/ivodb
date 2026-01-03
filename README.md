@@ -15,9 +15,9 @@ A lightweight, document-oriented database engine written in Zig, featuring a cus
 ---
 
 ### 🚀 Roadmap: REPL / CLI (Local Interaction)
-- [ ] **Lexer**: Tokenize input strings (e.g., "INSERT", "FROM", "{").
-- [ ] **Parser**: Convert tokens into executable Command structures.
-- [ ] **REPL Loop**: Standard Input (stdin) handler.
+- [x] **Lexer**: Tokenize input strings (e.g., "INSERT", "FROM", "{").
+- [x] **Parser**: Convert tokens into executable Command structures.
+- [x] **REPL Loop**: Standard Input (stdin) handler.
 - [ ] **Result Formatter**: Pretty-print query results in the terminal.
 
 ---

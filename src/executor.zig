@@ -4,8 +4,9 @@ const Database = @import("database.zig").Database;
 
 pub const Executor = struct {
     db: *Database,
-    /// Keeps track of which table the user is currently "in".
-    active_table: ?[]const u8,
+    active_table_buf: [256]u8 = undefined,
+    active_table_len: usize = 0,
+    active_table: ?[]const u8 = null,
 
     pub fn init(db: *Database) Executor {
         return Executor{
@@ -22,9 +23,14 @@ pub const Executor = struct {
                 std.debug.print("OK: Table '{s}' created.\n", .{data.table});
             },
             .use => |data| {
-                // Verify that the table actually exists
+                // Verify that the table actually existsGE
                 _ = try self.db.getTable(data.table);
-                self.active_table = data.table;
+
+                const len = @min(data.table.len, self.active_table_buf.len);
+                std.mem.copyForwards(u8, &self.active_table_buf, data.table[0..len]);
+                self.active_table_len = len;
+
+                self.active_table = self.active_table_buf[0..len];
                 std.debug.print("Switched to table '{s}'.\n", .{data.table});
             },
             .set => |data| {

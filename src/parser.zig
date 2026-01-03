@@ -79,15 +79,19 @@ pub const Parser = struct {
         return Command{ .use = .{ .table = table } };
     }
 
-    /// Parses: SET <key> = <value> (table is context-dependent)
+    /// Parses: SET <key> = <value> (t able is context-dependent)
     fn parseSet(self: *Parser) !Command {
         self.nextToken(); // Move to key
         const key = try self.expectIdentifierOrString();
 
-        if (self.peek_token.type != .EQUALS) return error.ExpectedEquals;
+        if (self.peek_token.type != .EQUALS) {
+            std.debug.print("Error: Expected '=', got '{s}' ({any})\n", .{ self.peek_token.literal, self.peek_token.type });
+            return error.ExpectedEquals;
+        }
         self.nextToken(); // Move to '='
 
         self.nextToken(); // Move to value
+
         const value = try self.expectValue();
 
         return Command{ .set = .{ .key = key, .value = value } };
