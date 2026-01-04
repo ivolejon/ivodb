@@ -10,6 +10,7 @@ To start the database in interactive mode (REPL):
 
 ```bash
 zig build run
+```
 
 ## Project Status & Checklist
 - [x] Offset-based reading/writing to file.
