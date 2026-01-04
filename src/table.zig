@@ -5,6 +5,12 @@ const Field = @import("types.zig").Field;
 const Block = @import("block.zig").Block;
 const Pager = @import("pager.zig").Pager;
 
+fn generateHiddenId() [16]u8 { // TODO: change to uuidV7
+    var id: [16]u8 = undefined;
+    std.crypto.random.bytes(&id);
+    return id;
+}
+
 /// Represents a database table and manages document insertion logic.
 pub const Table = struct {
     pager: *Pager,
@@ -28,6 +34,7 @@ pub const Table = struct {
         var current_page_id = self.first_page_id + (self.total_pages - 1);
         var block = try self.pager.getBlock(current_page_id);
 
+        // Kontrollera om vi behöver en ny sida
         if (block.getFreeEnd() - block.getFreeStart() < 256) {
             self.total_pages += 1;
             current_page_id = self.first_page_id + (self.total_pages - 1);
@@ -35,7 +42,14 @@ pub const Table = struct {
             block.initEmpty();
         }
 
-        try block.insertValue(.{ .number = @intCast(fields.len) });
+
+        const hidden_id = generateHiddenId(); // 16byte
+
+        try block.insertValue(.{ .number = @intCast(fields.len + 1) });
+
+        try block.insertValue(.{ .text = "_id" });
+        try block.insertValue(.{ .text = &hidden_id });//16
+
         for (fields) |field| {
             try block.insertValue(.{ .text = field.name });
             try block.insertValue(field.value);
@@ -59,7 +73,7 @@ pub const Table = struct {
     }
 };
 
-test "Table: insert and retrieve document" {
+test "Table: insert and retrieve document with hidden ID" {
     const allocator = std.testing.allocator;
     const test_file = "test_table_insert.ivodb";
     std.fs.cwd().deleteFile(test_file) catch {};
@@ -78,19 +92,29 @@ test "Table: insert and retrieve document" {
 
     try table.insertDocument(&fields);
 
-    // Verify that data exists in the block
     const block = try pager.getBlock(1);
 
     // Header (number of fields)
     const header = try block.getValue(0);
-    try std.testing.expectEqual(@as(i32, 2), header.number);
+    try std.testing.expectEqual(@as(i32, 3), header.number);
 
-    // First field name
-    const f1_name = try block.getValue(1);
+    
+    const id_label = try block.getValue(1);
+    try std.testing.expectEqualStrings("_id", id_label.text);
+
+    const id_value = try block.getValue(2);
+    try std.testing.expectEqual(@as(usize, 16), id_value.text.len);
+
+    // 3. Kontrollera det första vanliga fältet (username)
+    // Offset är nu 3 (header) + 2 (id_label + id_val) = 3
+    const f1_name = try block.getValue(3);
     try std.testing.expectEqualStrings("username", f1_name.text);
+
+    const f1_val = try block.getValue(4);
+    try std.testing.expectEqualStrings("ivo", f1_val.text);
 }
 
-test "Table: page splitting" {
+test "Table: page splitting with hidden ID" {
     const allocator = std.testing.allocator;
     const test_file = "test_table_split.ivodb";
     std.fs.cwd().deleteFile(test_file) catch {};
@@ -108,16 +132,17 @@ test "Table: page splitting" {
         .{ .name = "data", .value = .{ .text = long_string } },
     };
 
-    // Insert until we force a new page
-    var count: u32 = 0;
-    while (table.total_pages == 1) : (count += 1) {
+    while (table.total_pages == 1) {
         try table.insertDocument(&fields);
     }
 
-    // Verify that total_pages has increased
     try std.testing.expect(table.total_pages > 1);
 
-    // Verify that the new page (page 2) has been initialized
     const block2 = try pager.getBlock(2);
     try std.testing.expect(block2.isValid());
+
+    const first_val_page2 = try block2.getValue(0);
+    try std.testing.expect(first_val_page2 == .number);
+    const id_label_page2 = try block2.getValue(1);
+    try std.testing.expectEqualStrings("_id", id_label_page2.text);
 }

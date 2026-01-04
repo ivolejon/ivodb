@@ -63,6 +63,7 @@ pub const Executor = struct {
     fn handleGet(self: *Executor, table_name: []const u8, key: []const u8) !?[]const u8 {
         var table = try self.db.getTable(table_name);
         var p: u64 = 0;
+
         while (p < table.total_pages) : (p += 1) {
             const block = try table.getBlock(p);
             var i: u16 = 0;
@@ -70,17 +71,31 @@ pub const Executor = struct {
 
             while (i < cell_count) {
                 const header = try block.getValue(i);
+
                 if (header != .number) {
                     i += 1;
                     continue;
                 }
 
-                const stored_key = try block.getValue(i + 2);
+                // Header + 6 dataceller krävs för ett fullständigt dokument
+                if (i + 6 >= cell_count) break;
+
+                const stored_key = try block.getValue(i + 4);
+
                 if (stored_key == .text and std.mem.eql(u8, stored_key.text, key)) {
-                    const val = try block.getValue(i + 4);
-                    return val.text;
+                    const id_cell = try block.getValue(i + 2);
+                    if (id_cell == .text) {
+                        printId(id_cell.text);
+                    }
+
+                    const val = try block.getValue(i + 6);
+                    if (val == .text) {
+                        return val.text;
+                    }
                 }
-                i += 5;
+
+                const num_fields = @as(u16, @intCast(header.number));
+                i += 1 + (num_fields * 2);
             }
         }
         return null;
@@ -89,9 +104,11 @@ pub const Executor = struct {
     fn handleDelete(self: *Executor, table_name: []const u8, key: []const u8) !void {
         var table = try self.db.getTable(table_name);
         var p: u64 = 0;
+
         while (p < table.total_pages) : (p += 1) {
             const block = try table.getBlock(p);
             var i: u16 = 0;
+
             while (i < block.getCellCount()) {
                 const header = try block.getValue(i);
                 if (header != .number) {
@@ -99,18 +116,37 @@ pub const Executor = struct {
                     continue;
                 }
 
-                const stored_key = try block.getValue(i + 2);
+                // Antal fält (bör vara 3: _id, k, v)
+                const num_fields = @as(u16, @intCast(header.number));
+
+                const cells_in_doc = 1 + (num_fields * 2);
+
+                // (i+1=_id, i+2=id_val, i+3=k, i+4=key_val)
+                if (i + 4 >= block.getCellCount()) break;
+
+                const stored_key = try block.getValue(i + 4);
                 if (stored_key == .text and std.mem.eql(u8, stored_key.text, key)) {
-                    var del_count: u8 = 0;
-                    while (del_count < 5) : (del_count += 1) {
+                    var del_idx: u8 = 0;
+                    while (del_idx < cells_in_doc) : (del_idx += 1) {
                         try block.deleteValue(i);
                     }
+
                     block.isDirty = true;
                     return;
                 }
-                i += 5;
+
+                i += cells_in_doc;
             }
         }
+    }
+
+    fn printId(id_bytes: []const u8) void {
+        var buf: [32]u8 = undefined;
+        for (id_bytes, 0..) |byte, idx| {
+            _ = std.fmt.bufPrint(buf[idx * 2 .. (idx * 2) + 2], "{x:0>2}", .{byte}) catch unreachable;
+        }
+
+        std.debug.print("[ID: {s}] ", .{buf});
     }
 };
 
