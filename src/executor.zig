@@ -51,6 +51,9 @@ pub const Executor = struct {
                 try self.handleDelete(table_name, data.key);
                 std.debug.print("OK\n", .{});
             },
+            .scan => |_| {
+                std.debug.print("Scan not implemented yet.\n", .{});
+            },
         }
     }
 

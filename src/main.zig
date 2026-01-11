@@ -5,9 +5,9 @@ const IoContext = @import("io_context.zig").IoContext;
 const Repl = @import("repl.zig").Repl;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     const db_path = "data.ivodb";
     var db = try Database.init(allocator, db_path);

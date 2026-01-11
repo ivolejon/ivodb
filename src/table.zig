@@ -4,6 +4,7 @@ const ValueType = @import("types.zig").ValueType;
 const Field = @import("types.zig").Field;
 const Block = @import("block.zig").Block;
 const Pager = @import("pager.zig").Pager;
+const TableIterator = @import("table_iter.zig").TableIterator;
 
 fn generateHiddenId() [16]u8 { // TODO: change to uuidV7
     var id: [16]u8 = undefined;
@@ -42,13 +43,12 @@ pub const Table = struct {
             block.initEmpty();
         }
 
-
         const hidden_id = generateHiddenId(); // 16byte
 
         try block.insertValue(.{ .number = @intCast(fields.len + 1) });
 
         try block.insertValue(.{ .text = "_id" });
-        try block.insertValue(.{ .text = &hidden_id });//16
+        try block.insertValue(.{ .text = &hidden_id }); //16
 
         for (fields) |field| {
             try block.insertValue(.{ .text = field.name });
@@ -70,6 +70,10 @@ pub const Table = struct {
             .{ .name = "v", .value = .{ .text = value } },
         };
         try self.insertDocument(&fields);
+    }
+
+    pub fn scan(self: *Table) TableIterator {
+        return .{ .table = self };
     }
 };
 
@@ -98,7 +102,6 @@ test "Table: insert and retrieve document with hidden ID" {
     const header = try block.getValue(0);
     try std.testing.expectEqual(@as(i32, 3), header.number);
 
-    
     const id_label = try block.getValue(1);
     try std.testing.expectEqualStrings("_id", id_label.text);
 

@@ -14,6 +14,7 @@ pub const TokenType = enum {
     SEMICOLON,
     EOF,
     ILLEGAL,
+    STAR,
 };
 
 /// Represents a single symbol or word in the source code.
@@ -54,6 +55,7 @@ pub const Lexer = struct {
         var tok = Token{ .type = .ILLEGAL, .literal = "" };
 
         switch (self.ch) {
+            '*' => tok = Token{ .type = .STAR, .literal = "*" },
             '=' => tok = Token{ .type = .EQUALS, .literal = "=" },
             ';' => tok = Token{ .type = .SEMICOLON, .literal = ";" },
             '"' => {

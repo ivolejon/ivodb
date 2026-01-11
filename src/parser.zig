@@ -10,6 +10,7 @@ pub const CommandType = enum {
     delete,
     create,
     use,
+    scan,
 };
 
 /// Data structure that holds the parsed command.
@@ -20,6 +21,7 @@ pub const Command = union(CommandType) {
     delete: struct { key: []const u8 },
     create: struct { table: []const u8 },
     use: struct { table: []const u8 },
+    scan: struct {},
 };
 
 /// Parser for the Key-Value store grammar.
@@ -101,6 +103,13 @@ pub const Parser = struct {
     fn parseGet(self: *Parser) !Command {
         self.nextToken(); // Move to key
         const key = try self.expectIdentifierOrString();
+        switch (self.cur_token.type) {
+            .IDENTIFIER, .STRING, .STAR => {},
+            else => return error.ExpectedIdentifierOrString,
+        }
+        if (self.cur_token.type == .STAR) {
+            return Command{ .scan = .{} };
+        }
         return Command{ .get = .{ .key = key } };
     }
 
@@ -114,7 +123,7 @@ pub const Parser = struct {
     /// Validates and returns an identifier or a string.
     fn expectIdentifierOrString(self: *Parser) ![]const u8 {
         return switch (self.cur_token.type) {
-            .IDENTIFIER, .STRING => self.cur_token.literal,
+            .IDENTIFIER, .STRING, .STAR => self.cur_token.literal,
             else => error.ExpectedIdentifierOrString,
         };
     }
