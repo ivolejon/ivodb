@@ -22,7 +22,8 @@ zig build run
 - [x] Lexer, tokenize input strings.
 - [x] Convert tokens into executable Command structures.
 - [x] repl, standard Input (stdin) handler.
-- [ ] Pretty-print query results in the terminal.
+- [x] Pretty-print query results in the terminal.
+- [x] Table scans.
 - [ ] Use uuidV7 to generate _id instad of random bytes
 - [ ] Design the binary or text format for TCP packets.
 - [ ] Basic listener using `std.net`.
