@@ -13,7 +13,7 @@ pub fn main() !void {
     var db = try Database.init(allocator, db_path);
     defer db.deinit(allocator);
 
-    var exec = executor.Executor.init(db);
+    var exec = executor.Executor.init(allocator, db);
 
     var io = IoContext.init();
 
